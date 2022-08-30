@@ -31,6 +31,8 @@ a=1
 m=2/N
 #
 gμ=1
+#
+Nc=3
 
 # define the correct wave number
 wave_number=fftfreq(N,2π)
@@ -43,7 +45,7 @@ for i in 1:N, j in 1:N
 end
 
 #calculate fft and ifft plans for later use
-rho=randn(ComplexF32, (N,N))
+rho=randn(ComplexF64, (N,N))
 fft_p=plan_fft(rho; flags=FFTW.MEASURE, timelimit=Inf)
 ifft_p=plan_ifft(rho; flags=FFTW.MEASURE, timelimit=Inf)
 
@@ -52,12 +54,12 @@ function V()
     ρₓ=rand(Normal(0,gμ/sqrt(Ny)),Ny,N,N,8) # draw the color charge density from N(0,1)
                                     # for each layer, each point, and each color
 
-    ρₖ=randn(ComplexF32, (Ny,N,N,8)) # create a random complex matrix to store the data from FFT
+    ρₖ=randn(ComplexF64, (Ny,N,N,8)) # create a random complex matrix to store the data from FFT
 
-    Aₖ=randn(ComplexF32, (Ny,N,N,8)) # create a random complex matrix to store the data for momemtum space field for fixed color
+    Aₖ=randn(ComplexF64, (Ny,N,N,8)) # create a random complex matrix to store the data for momemtum space field for fixed color
     Aₓ=similar(Aₖ)                   # same thing for coordinate space
 
-    Vₓ=randn(ComplexF32, (N,N,3,3))
+    Vₓ=randn(ComplexF64, (N,N,3,3))
     #calculate ρₖ
     for i in 1:Ny, a in 1:8
             ρₖ[i,:,:,a]=fft(ρₓ[i,:,:,a])
@@ -114,3 +116,38 @@ function V_plan()
 
     @time  Vₓ
 end
+
+# the next step is to compute coordinate space dipole
+# first, we define the lattice distance r, the input is the lattice size
+function r(x,y)
+    x=@SVector[x[1],x[2]]
+    y=@SVector[y[1],y[2]]
+
+    r=sqrt(dot(x-y,x-y))÷1+1
+    Int(r)
+end
+
+dipole=zeros(N,N,N,N)
+V_test=V()
+for x1 in 1:N,x2 in 1:N,y1 in 1:N,y2 in 1:N
+    dipole[x1,x2,y1,y2]=real(tr(conj(transpose(V_test[x1,x2,:,:]))*V_test[y1,y2,:,:]))/Nc
+end
+
+# calculate d(r) from single configuraton
+R=LinRange(0,39,40)
+dipole_r=zeros(2,40)
+
+for x1 in 1:N,x2 in 1:N,y1 in 1:N,y2 in 1:N
+    x=[x1,x2]
+    y=[y1,y2]
+    i=r(x,y)
+
+    if i<40
+       dipole_r[1,i]=dipole_r[1,i]+dipole[x1,x2,y1,y2]
+       dipole_r[2,i]=dipole_r[2,i]+1
+    end
+end
+
+scatter(1:40,dipole_r[1,:]./dipole_r[2,:])
+
+#
