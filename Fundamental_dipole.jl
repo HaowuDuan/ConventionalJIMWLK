@@ -11,6 +11,7 @@ using Random
 using Distributions
 using FFTW
 using Plots
+using Statistics
 
 
 # This file is a test of calculation of the dipole correlator in MV model.
@@ -33,12 +34,11 @@ m=2/N
 gμ=1
 #
 Nc=3
-
 # define the correct wave number
 wave_number=fftfreq(N,2π)
-
+# number of configurations
+N_config=10
 # Calculate magnitude of lattice momentum square for later use
-
 K2=zeros(N,N)
 for i in 1:N, j in 1:N
     K2[i,j]=2(2-cos(wave_number[i])-cos(wave_number[j]))
@@ -123,7 +123,7 @@ function r(x,y)
     x=@SVector[x[1],x[2]]
     y=@SVector[y[1],y[2]]
 
-    r=sqrt(dot(x-y,x-y))÷1+1
+    r=sqrt(dot(x-y,x-y))÷1
     Int(r)
 end
 
@@ -167,3 +167,70 @@ for k1 in 1:N,k2 in 1:N
 end
 
 scatter(momentum,dipole_k[1,:]./(dipole_k[2,:]*N^2)*wave_number[2]^2 .*(momentum[:]).^2 )
+
+
+
+# extrac the same dipole_k and dipole_k but from multiple configurations.
+# created matrices to store data for each configuration in order to extract error bar using bootstrap
+
+dipole_k=zeros(2,31,N_config)
+dipole_r=zeros(2,31,N_config)
+
+Threads.@threads @time for j in 1:N_config
+      #create a configuration and also prepare the momentum space Wilson line
+      Vₓ_tmp=V()
+      Vₖ_tmp=fft(Vₓ_tmp)
+      # Define temporary matrix to store inter-mediate step data
+      dipole_tmp=zeros(N,N,N,N)
+      dipole_r_tmp=zeros(2,31)
+      dipole_k_tmp=zeros(2,31)
+
+
+      for x1 in 1:N,x2 in 1:N,y1 in 1:N,y2 in 1:N
+          dipole_tmp[x1,x2,y1,y2]=real(tr(conj(transpose(Vₓ_tmp[x1,x2,:,:]))*Vₓ_tmp[y1,y2,:,:]))/Nc
+      end
+      # calculate coordinate space dipole for a single configuration
+      for x1 in 1:N,x2 in 1:N,y1 in 1:N,y2 in 1:N
+          x=[x1,x2]
+          y=[y1,y2]
+          i=r(x,y)
+
+          if i<30
+             dipole_r_tmp[1,i+1]=dipole_r_tmp[1,i+1]+dipole_tmp[x1,x2,y1,y2]
+             dipole_r_tmp[2,i+1]=dipole_r_tmp[2,i+1]+1
+          end
+
+      end
+
+      # calculate momentum space dipole for a single configuration
+      for k1 in 1:N,k2 in 1:N
+
+          i=Int(sqrt(K2[k1,k2])÷wave_number[2])
+
+          if i<30
+             dipole_k_tmp[1,i+1]=dipole_k_tmp[1,i+1]+real(tr(conj(transpose(Vₖ_tmp[k1,k2,:,:]))*Vₖ_tmp[k1,k2,:,:]))/Nc
+             dipole_k_tmp[2,i+1]=dipole_k_tmp[2,i+1]+1
+          end
+      end
+
+      #
+       dipole_k[1,:,j]=dipole_k_tmp[1,:]./dipole_k_tmp[2,:]
+       dipole_r[1,:,j]=dipole_r_tmp[1,:]./dipole_r_tmp[2,:]
+end
+
+
+function bootstrap_arr(db,M)
+     bs=[]
+     for i in 1:M
+     dbBS = []
+     for j in 1:length(db)
+     idx=rand(1:length(db))
+     push!(dbBS, db[idx])
+     end
+     push!(bs,mean(dbBS))
+     end
+
+     MEAN = mean(bs)
+     STD = std(bs)
+     (MEAN,STD)
+end
