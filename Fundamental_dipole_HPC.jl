@@ -7,6 +7,8 @@ using LinearAlgebra
 using Random
 using Distributions
 using FFTW
+using JLD2
+using FileIO
 
 
 
@@ -90,17 +92,9 @@ F_Wilson_line=V()
 
 F_data=randn(ComplexF64, (N^2,9))
 
-for i in 1:3
-    for j in 1:3
-        color_index=(j-1)*3+i
-        tmp=F_Wilson_line[:,:,i,j]
-
-        F_data[:,color_index]=reshape(tmp,(N^2,1))
-    end
-end
-
 
 
 
 println(F_data)
+
 flush(stdout)
