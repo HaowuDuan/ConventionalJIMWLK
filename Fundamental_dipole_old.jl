@@ -4,7 +4,6 @@ Pkg.activate(".")
 
 
 
-
 using DelimitedFiles
 using StaticArrays
 using LinearAlgebra
@@ -29,11 +28,11 @@ include("SU3.jl")
 #longitudinal layers
 Ny=100
 # Transverse lattice size in one direction
-N=256
+N=64
 # lattice spacing
-a=1/N
+a=32/N
 # infra regulator m
-m=0.5
+m=1/32
 #
 gμ=1
 #
@@ -45,7 +44,7 @@ N_config=100
 # Calculate magnitude of lattice momentum square for later use
 K2=zeros(N,N)
 for i in 1:N, j in 1:N
-    K2[i,j]=2(2-cos(wave_number[i])-cos(wave_number[j]))
+    K2[i,j]=2(2-cos(wave_number[i])-cos(wave_number[j]))/a^2
 end
 
 #calculate fft and ifft plans for later use
@@ -53,7 +52,45 @@ rho=randn(ComplexF64, (N,N))
 fft_p=plan_fft(rho; flags=FFTW.MEASURE, timelimit=Inf)
 ifft_p=plan_ifft(rho; flags=FFTW.MEASURE, timelimit=Inf)
 
+# create one layer at a time
 function V()
+    Vₓ=randn(ComplexF64, (N,N,3,3))
+    for i in 1:Ny
+
+        ρₓ=rand(Normal(0,gμ/sqrt(Ny)),N,N,8) # draw the color charge density from N(0,1)
+                                    # for each layer, each point, and each color
+
+        ρₖ=randn(ComplexF64, (N,N,8)) # create a random complex matrix to store the data from FFT
+
+        Aₖ=randn(ComplexF64, (N,N,8)) # create a random complex matrix to store the data for momemtum space field for fixed color
+        Aₓ=similar(Aₖ)                   # same thing for coordinate space
+
+
+        #calculate ρₖ
+         for  a in 1:8
+              ρₖ[:,:,a]=fft_p*ρₓ[:,:,a]
+         end
+        #calculate A(k) for fixed color
+        for n in 1:N, l in 1:N
+            Aₖ[n,l,:]=ρₖ[n,l,:]/(K2[n,l]+m^2)
+        end
+        # calculate A(x). Note that A(x) is real
+        for a in 1:8
+            Aₓ[:,:,a]=real(ifft_p*Aₖ[:,:,a])
+        end
+        # taking the product of all layer
+        for n in 1:N, l in 1:N
+              if i==1
+                 Vₓ[n,l,:,:]=exp(sum(-im*Aₓ[n,l,a]*t[a] for a in 1:8))
+              else
+                 Vₓ[n,l,:,:]=exp(sum(-im*Aₓ[n,l,a]*t[a] for a in 1:8))*Vₓ[n,l,:,:]
+              end
+        end
+     end
+     Vₓ
+end
+# create everything all at once
+function V_old()
 
     ρₓ=rand(Normal(0,gμ/sqrt(Ny)),Ny,N,N,8) # draw the color charge density from N(0,1)
                                     # for each layer, each point, and each color
@@ -92,7 +129,7 @@ p = Progress(N_config)
 
 Threads.@threads for n in 1:N_config
     tmp=V()
-    save("Data/Wilson_JLD/V_$(n)_$(N).jld2", "FWL_128", tmp)
+    save("Data/Wilson_JLD/V_$(n)_$(N).jld2", "FWL_512", tmp)
     next!(p)
 end
 
@@ -157,8 +194,8 @@ for x1 in 1:N,x2 in 1:N,y1 in 1:N,y2 in 1:N
     i=r(x,y)
 
     if i<40
-       dipole_r[1,i]=dipole_r[1,i]+dipole[x1,x2,y1,y2]
-       dipole_r[2,i]=dipole_r[2,i]+1
+       dipole_r[1,i+1]=dipole_r[1,i+1]+dipole[x1,x2,y1,y2]
+       dipole_r[2,i+1]=dipole_r[2,i+1]+1
     end
 end
 
@@ -246,3 +283,36 @@ function bootstrap_arr(db,M)
      STD = std(bs)
      (MEAN,STD)
 end
+
+
+
+begin
+   V_test=Wilson_line_Ny()
+   dipole=zeros(N,N,N,N)
+   dipole_r=zeros(2,40)
+
+   function r(x,y)
+       x=@SVector[x[1],x[2]]
+       y=@SVector[y[1],y[2]]
+
+       r=sqrt(dot(x-y,x-y))÷1
+       Int(r)
+   end
+
+   for x1 in 1:N,x2 in 1:N,y1 in 1:N,y2 in 1:N
+       dipole[x1,x2,y1,y2]=real(tr(conj(transpose(V_test[x1,x2,:,:]))*V_test[y1,y2,:,:]))/Nc
+   end
+
+    for x1 in 1:N,x2 in 1:N,y1 in 1:N,y2 in 1:N
+       x=[x1,x2]
+       y=[y1,y2]
+       i=r(x,y)
+
+       if i<40
+          dipole_r[1,i+1]=dipole_r[1,i+1]+dipole[x1,x2,y1,y2]
+          dipole_r[2,i+1]=dipole_r[2,i+1]+1
+       end
+   end
+end
+
+scatter!(0:39,dipole_r[1,:]./dipole_r[2,:])
