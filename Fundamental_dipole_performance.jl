@@ -40,6 +40,11 @@ Nc=3
 # number of configurations
 N_config=100
 # anything will be updated with new N
+
+rng = MersenneTwister(1234)
+
+
+
 begin
     # define the correct wave number
     wave_number=fftfreq(N,2π)
@@ -60,8 +65,12 @@ end
 # functions to compute fundamental wilson line for a single configuration
 #function to compute rho_k
 function rho_k()
-    fft(rand(Normal(0,gμ/sqrt(Ny)),N,N))# draw the color charge density from N(0,1)                                # for each layer, each point, and each color
+    # set the seed for testing purpose
+    rng = MersenneTwister()
+    fft(rand(rng,Normal(0,gμ/sqrt(Ny)),N,N))# draw the color charge density from N(0,1)                                # for each layer, each point, and each color
 end
+
+
 
 #function to compute field A(x) for a fixed color
 function Field(ρ)
@@ -71,7 +80,7 @@ function Field(ρ)
         end
         real(ifft(A_k))
 end
-@btime Field()
+#@btime Field()
 #function to compute a single layer wilson line
 function Wilson_line()
      Vₓ_arg=randn(ComplexF32, (N,N,3,3))
@@ -96,7 +105,7 @@ function Wilson_line()
      Vₓ
 end
 
-@btime Wilson_line()
+#@btime Wilson_line()
 
 #taking product for multiple layers
 function Wilson_line_Ny()
@@ -164,50 +173,50 @@ function D_r()
         dipole_r_tmp
 end
 
+@time data_test=D_r()
 
-@btime data_test=D_r()
-scatter(data_test[:,1],data_test[:,2])
-plot!(data_test[:,1],exp.(-(data_test[:,1]).^2/10))
-# now we compute the dipoles for different N
 p = Progress(N_config)
 
- for i in 1:10
+for i in 1:N_config
       data_tmp=D_r()
       data_dipole_64[i,:,:]=data_tmp[:,:]
-     # next!(p)
-end
-
-for i in 1:10
-     data_tmp=D_r()
-     data_dipole_128[i,:,:]=data_tmp[:,:]
-    # next!(p)
+      next!(p)
 end
 
 
 
-scatter(data_dipole_64[8,:,1],data_dipole_64[8,:,2])
+
+
+
+scatter!(data_dipole_64[80,:,1],data_dipole_64[62,:,2])
 scatter(data_dipole_64[1,:,1],data_dipole_64[1,:,2])
 
+data_dipole_64_BS=zeros(40,3)
 
+for n in 1:40
+    data_dipole_64_BS[n,1]=n
+    data_tmp=data_dipole_64[:,n,2]
+    tmp=BOOTSTRAP(data_tmp,N_config)
 
-
-
-function bootstrap_arr(db,M)
-     bs=[]
-     for i in 1:M
-     dbBS = []
-     for j in 1:length(db)
-     idx=rand(1:length(db))
-     push!(dbBS, db[idx])
-     end
-     push!(bs,mean(dbBS))
-     end
-
-     MEAN = mean(bs)
-     STD = std(bs)
-     (MEAN,STD)
+    data_dipole_64_BS[n,2]=tmp[1]
+    data_dipole_64_BS[n,3]=tmp[2]
 end
 
 
+scatter(data_dipole_64_BS[:,1],data_dipole_64_BS[:,2],yerr=data_dipole_64_BS[:,3])
 
-# 
+function BOOTSTRAP(data,N_of_config)
+     bootstrap=zeros(N_of_config)
+     for i in 1:N_of_config
+     BS_sample = similar(bootstrap)
+     for j in 1:N_of_config
+     index=rand(1:N_of_config)
+     BS_sample[j]=data[index]
+     end
+     bootstrap[i]=mean(BS_sample)
+     end
+
+     bootstrap_MEAN = mean(bootstrap)
+     bootstrap_STD = std(bootstrap)
+     bootstrap_MEAN,bootstrap_STD
+end
