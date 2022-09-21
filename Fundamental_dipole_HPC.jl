@@ -9,7 +9,7 @@ using Distributions
 using FFTW
 using JLD2
 using FileIO
-
+using BenchmarkTools
 
 
 # This file is a test of calculation of the dipole correlator in MV model.

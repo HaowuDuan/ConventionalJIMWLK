@@ -14,6 +14,7 @@ using Statistics
 using JLD2
 using FileIO
 using ProgressMeter
+using BenchmarkTools
 # This file is a test of calculation of the dipole correlator in MV model.
 # All calculation will be done at fixed parameters.
 #Once the code is working, it will be modifined and put into a bigger CGC package where the functions can be called.
@@ -26,7 +27,7 @@ include("SU3.jl")
 #longitudinal layers
 Ny=100
 # Transverse lattice size in one direction
-N=128
+N=64
 # lattice spacing
 a=32/N
 # infra regulator m
@@ -55,90 +56,95 @@ begin
     ifft_p=plan_ifft(rho; flags=FFTW.MEASURE, timelimit=Inf)
 end
 
+
 # functions to compute fundamental wilson line for a single configuration
-begin
-    #function to compute rho_k
-    function rho_k()
-        fft(rand(Normal(0,gμ/sqrt(Ny)),N,N))# draw the color charge density from N(0,1)
-                                                # for each layer, each point, and each color
-    end
+#function to compute rho_k
+function rho_k()
+    fft(rand(Normal(0,gμ/sqrt(Ny)),N,N))# draw the color charge density from N(0,1)                                # for each layer, each point, and each color
+end
 
-    #function to compute field A(x) for a fixed color
-    function Field()
-            ρₖ=rho_k()
-            A_k=similar(ρₖ)
-            for n in 1:N, l in 1:N
-                A_k[n,l]=ρₖ[n,l]/(K2[n,l].+m^2)
+#function to compute field A(x) for a fixed color
+function Field(ρ)
+        A_k=similar(ρ)
+        for l in 1:N, n in 1:N
+            A_k[n,l]=ρ[n,l]/(K2[n,l].+m^2)
+        end
+        real(ifft(A_k))
+end
+@btime Field()
+#function to compute a single layer wilson line
+function Wilson_line()
+     Vₓ_arg=randn(ComplexF32, (N,N,3,3))
+     Vₓ=randn(ComplexF32, (N,N,3,3))
+     for a in 1:8
+         ρₖ=rho_k()
+         tmp_A=Field(ρₖ)
+          if a ==1
+            for l in 1:N, n in 1:N
+                Vₓ_arg[n,l,:,:]=-im*tmp_A[n,l]*t[a]
             end
-            real(ifft(A_k))
-    end
-
-    #function to compute a single layer wilson line
-    function Wilson_line()
-         Vₓ_arg=randn(ComplexF32, (N,N,3,3))
-         Vₓ=randn(ComplexF32, (N,N,3,3))
-         for a in 1:8
-             tmp_A=Field()
-              if a ==1
-                for n in 1:N, l in 1:N
-                    Vₓ_arg[n,l,:,:]=-im*tmp_A[n,l]*t[a]
-                end
-             else
-                 for n in 1:N, l in 1:N
-                   Vₓ_arg[n,l,:,:]=-im*tmp_A[n,l]*t[a]+Vₓ_arg[n,l,:,:]
-                 end
+         else
+             for l in 1:N, n in 1:N
+               Vₓ_arg[n,l,:,:]=-im*tmp_A[n,l]*t[a]+Vₓ_arg[n,l,:,:]
              end
          end
+     end
 
-         for n in 1:N, l in 1:N
-             Vₓ[n,l,:,:]=exp(Vₓ_arg[n,l,:,:])
-         end
-         Vₓ
-    end
-
-
-    #taking product for multiple layers
-    function Wilson_line_Ny()
-        V=Wilson_line()
-         for ny in 2:Ny
-                  W=Wilson_line()
-               for n in 1:N, l in 1:N
-                  V[n,l,:,:]=W[n,l,:,:]*V[n,l,:,:]
-                end
-            end
-          V
-    end
+     for l in 1:N, n in 1:N
+         Vₓ[n,l,:,:]=exp(Vₓ_arg[n,l,:,:])
+     end
+     Vₓ
 end
+
+@btime Wilson_line()
+
+#taking product for multiple layers
+function Wilson_line_Ny()
+    V=Wilson_line()
+     Threads.@threads for ny in 2:Ny
+              W=Wilson_line()
+           for l in 1:N, n in 1:N
+              V[n,l,:,:]=W[n,l,:,:]* V[n,l,:,:]
+            end
+        end
+      V
+end
+
+#@btime Wilson_line_Ny()
+
+
+
 # functions to compute dipole correlators for a single configuration
-begin
 
-    dipole_tmp=zeros(N,N,N,N)
-    r_size=40*(N÷64)
-    dipole_r_tmp=zeros(r_size,2)
-    # for data storage
-    #data_dipole_64=zeros(100,r_size,2)
-    data_dipole_128=zeros(100,r_size,2)
+dipole_tmp=zeros(N,N,N,N)
+r_size=40*(N÷64)
+dipole_r_tmp=zeros(r_size,2)
+# for data storage
+data_dipole_64=zeros(100,r_size,2)
+data_dipole_128=zeros(100,r_size,2)
 
-    function r(x,y)
+function r(x,y)
         x=@SVector[x[1],x[2]]
         y=@SVector[y[1],y[2]]
 
         r=sqrt(dot(x-y,x-y))÷1
         Int(r)
-    end
+end
 
-    function D_xy()
+function D_xy()
          V_tmp=Wilson_line_Ny()
-          for x1 in 1:N,x2 in 1:N,y1 in 1:N,y2 in 1:N
+          Threads.@threads for y2 in 1:N
+              for y1 in 1:N,x2 in 1:N,x1 in 1:N
                 dipole_tmp[x1,x2,y1,y2]=real(tr(conj(transpose(V_tmp[x1,x2,:,:]))*V_tmp[y1,y2,:,:]))/Nc
+              end
           end
           dipole_tmp
-    end
+end
 
-    function D_r()
-        dipole_tmp=D_xy()
-         for x1 in 1:N
-            for x2 in 1:N,y1 in 1:N,y2 in 1:N
+function D_r()
+         dipole_tmp=D_xy()
+         Threads.@threads for y2 in 1:N
+             for y1 in 1:N,x2 in 1:N,x1 in 1:N
               x=[x1,x2]
               y=[y1,y2]
               i=r(x,y)
@@ -147,19 +153,21 @@ begin
                    dipole_r_tmp[i+1,2]=dipole_r_tmp[i+1,2]+dipole_tmp[x1,x2,y1,y2]
                    dipole_r_tmp[i+1,1]=dipole_r_tmp[i+1,1]+1
               end
-           end
+            end
         end
 
-         for i in 1:r_size
+
+        Threads.@threads for i in 1:r_size
                 dipole_r_tmp[i,2]=dipole_r_tmp[i,2]/dipole_r_tmp[i,1]
                 dipole_r_tmp[i,1]=i-1
         end
         dipole_r_tmp
-   end
 end
 
 
-
+@btime data_test=D_r()
+scatter(data_test[:,1],data_test[:,2])
+plot!(data_test[:,1],exp.(-(data_test[:,1]).^2/10))
 # now we compute the dipoles for different N
 p = Progress(N_config)
 
@@ -175,7 +183,7 @@ for i in 1:10
     # next!(p)
 end
 
-scatter()
+
 
 scatter(data_dipole_64[8,:,1],data_dipole_64[8,:,2])
 scatter(data_dipole_64[1,:,1],data_dipole_64[1,:,2])
@@ -199,3 +207,7 @@ function bootstrap_arr(db,M)
      STD = std(bs)
      (MEAN,STD)
 end
+
+
+
+# 
