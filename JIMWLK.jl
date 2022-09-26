@@ -4,7 +4,7 @@ Pkg.activate(".")
 
 using DelimitedFiles
 using StaticArrays
-using LinearAlgebra
+using LinearAlgebras
 using LaTeXStrings
 using Random
 using Distributions
@@ -28,12 +28,10 @@ include("SU3.jl")
 Ny=100
 # Transverse lattice size in one direction
 N=64
-#lattice size
-L=32
 # lattice spacing
-a=L/N
+a=32/N
 # infra regulator m
-m=1/L
+m=1/32
 #
 gμ=1
 
@@ -43,6 +41,7 @@ Nc=3
 N_config=100
 # anything will be updated with new N
 
+rng = MersenneTwister(1234)
 
 
 
@@ -121,6 +120,8 @@ function Wilson_line_Ny()
 end
 
 #@btime Wilson_line_Ny()
+# To compute evolutions in both hamiltonian form and the symmetric form, just to test
+
 
 
 
@@ -128,14 +129,10 @@ end
 
 dipole_tmp=zeros(N,N,N,N)
 r_size=40*(N÷64)
-
+dipole_r_tmp=zeros(r_size,2)
 # for data storage
-data_dipole_64_L10=zeros(100,r_size,2)
-data_dipole_64_L20=zeros(100,r_size,2)
 data_dipole_64=zeros(100,r_size,2)
 data_dipole_128=zeros(100,r_size,2)
-
-
 
 function r(x,y)
         x=@SVector[x[1],x[2]]
@@ -157,7 +154,6 @@ end
 
 function D_r()
          dipole_tmp=D_xy()
-         dipole_r_tmp=zeros(r_size,2)
          Threads.@threads for y2 in 1:N
              for y1 in 1:N,x2 in 1:N,x1 in 1:N
               x=[x1,x2]
@@ -165,7 +161,6 @@ function D_r()
               i=r(x,y)
 
               if i<r_size
-                  
                    dipole_r_tmp[i+1,2]=dipole_r_tmp[i+1,2]+dipole_tmp[x1,x2,y1,y2]
                    dipole_r_tmp[i+1,1]=dipole_r_tmp[i+1,1]+1
               end
@@ -180,38 +175,6 @@ function D_r()
         dipole_r_tmp
 end
 
-
-
-p = Progress(N_config)
-
-for i in 1:N_config
-      data_tmp=D_r()
-      data_dipole_64[i,:,:]=data_tmp[:,:]
-      next!(p)
-end
-
-
-data_test=D_r()
-data_test20=D_r()
-scatter!(data_test[:,1],data_test[:,2],label="1/r")
-scatter!(data_test20[:,1],data_test20[:,2],label="L=20")
-
-scatter!(data_dipole_64[80,:,1],data_dipole_64[62,:,2])
-scatter(data_dipole_64[1,:,1],data_dipole_64[1,:,2])
-
-data_dipole_64_BS=zeros(40,3)
-
-for n in 1:40
-    data_dipole_64_BS[n,1]=n-1
-    data_tmp=data_dipole_64[:,n,2]
-    tmp=BOOTSTRAP(data_tmp,N_config)
-
-    data_dipole_64_BS[n,2]=tmp[1]
-    data_dipole_64_BS[n,3]=tmp[2]
-end
-
-
-scatter(data_dipole_64_BS[:,1],data_dipole_64_BS[:,2],yerr=data_dipole_64_BS[:,3])
 
 function BOOTSTRAP(data,N_of_config)
      bootstrap=zeros(N_of_config)
@@ -228,42 +191,3 @@ function BOOTSTRAP(data,N_of_config)
      bootstrap_STD = std(bootstrap)
      bootstrap_MEAN,bootstrap_STD
 end
-
-
-writedlm("Data/fundamental_dipole_64_BS.dat",data_dipole_64_BS)
-
-save("Data/fundamental_dipole_64_raw.jld2", "D_64", data_dipole_64)
-
-# N=128
-data_dipole_128=zeros(100,r_size*2,2)
-for i in 1:100
-    data_dipole_128[i,:,:]=readdlm("Data/data/Dipole_$(i)_128.dat",Float64)
-end
-
-data_dipole_128_BS=zeros(80,3)
-
-
-for n in 1:80
-    data_dipole_128_BS[n,1]=n-1
-    data_tmp=data_dipole_128[:,n,2]
-    tmp=BOOTSTRAP(data_tmp,N_config)
-
-    data_dipole_128_BS[n,2]=tmp[1]
-    data_dipole_128_BS[n,3]=tmp[2]
-end
-
-scatter(data_dipole_64_BS[:,1],data_dipole_64_BS[:,2],yerr=data_dipole_64_BS[:,3], label="N=64")
-scatter!(data_dipole_128_BS[:,1].*0.5,data_dipole_128_BS[:,2],yerr=data_dipole_128_BS[:,3],label="N=128")
-
-
-
-writedlm("Data/fundamental_dipole_128_BS.dat",data_dipole_128_BS)
-
-save("Data/fundamental_dipole_128_raw.jld2", "D_128", data_dipole_128)
-
-
-f(x)=exp(-x^2/2)
-y=LinRange(0,5,100)
-Y=similar(y)
-Y.=f.(y)
-plot(y,Y)
