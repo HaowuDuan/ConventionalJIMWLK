@@ -165,7 +165,7 @@ function D_r()
               i=r(x,y)
 
               if i<r_size
-                  
+
                    dipole_r_tmp[i+1,2]=dipole_r_tmp[i+1,2]+dipole_tmp[x1,x2,y1,y2]
                    dipole_r_tmp[i+1,1]=dipole_r_tmp[i+1,1]+1
               end
@@ -262,8 +262,8 @@ writedlm("Data/fundamental_dipole_128_BS.dat",data_dipole_128_BS)
 save("Data/fundamental_dipole_128_raw.jld2", "D_128", data_dipole_128)
 
 
-f(x)=exp(-x^2/2)
-y=LinRange(0,5,100)
+f(x)=exp(-x^2/(10^2)/2)
+y=LinRange(0,40,100)
 Y=similar(y)
 Y.=f.(y)
-plot(y,Y)
+plot!(y,Y,label="y=exp(-(x/10)^2/2)")
