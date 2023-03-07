@@ -68,7 +68,7 @@ end
 function rho_k()
     # set the seed for testing purpose
     rng = MersenneTwister()
-    fft(rand(rng,Normal(0,gμ/sqrt(Ny)),N,N))# draw the color charge density from N(0,1)                                # for each layer, each point, and each color
+    fft_p*rand(rng,Normal(0,gμ/sqrt(Ny)),N,N)# draw the color charge density from N(0,1)                                # for each layer, each point, and each color
 end
 
 
@@ -79,7 +79,7 @@ function Field(ρ)
         for l in 1:N, n in 1:N
             A_k[n,l]=ρ[n,l]/(K2[n,l].+m^2)
         end
-        real(ifft(A_k))
+        real(ifft_p*A_k)
 end
 #@btime Field()
 #function to compute a single layer wilson line
@@ -193,8 +193,8 @@ end
 
 data_test=D_r()
 data_test20=D_r()
-scatter!(data_test[:,1],data_test[:,2],label="1/r")
-scatter!(data_test20[:,1],data_test20[:,2],label="L=20")
+scatter(data_test[:,1],data_test[:,2])
+
 
 scatter!(data_dipole_64[80,:,1],data_dipole_64[62,:,2])
 scatter(data_dipole_64[1,:,1],data_dipole_64[1,:,2])
@@ -267,3 +267,7 @@ y=LinRange(0,40,100)
 Y=similar(y)
 Y.=f.(y)
 plot!(y,Y,label="y=exp(-(x/10)^2/2)")
+
+
+
+# cross check 
