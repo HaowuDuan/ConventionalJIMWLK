@@ -15,15 +15,13 @@ using JLD2
 using FileIO
 using ProgressMeter
 using BenchmarkTools
+using GellMannMatrices
 # This file is a test of calculation of the dipole correlator in MV model.
 # All calculation will be done at fixed parameters.
 #Once the code is working, it will be modifined and put into a bigger CGC package where the functions can be called.
 #pre-defined functions
 #SU(3) generators, t[a, i, j] is 8*3*3 matrix, T[a,b,c] is 8*8*8 matrix.
 include("SU3.jl")
-
-
-
 #longitudinal layers
 Ny=100
 # Transverse lattice size in one direction
@@ -182,7 +180,7 @@ end
 
 
 
-p = Progress(N_config)
+p = Progress(1)
 
 for i in 1:N_config
       data_tmp=D_r()
@@ -270,4 +268,7 @@ plot!(y,Y,label="y=exp(-(x/10)^2/2)")
 
 
 
-# cross check 
+# cross check
+G=gellmann(Nc,skip_identity=false)
+
+G[9]
