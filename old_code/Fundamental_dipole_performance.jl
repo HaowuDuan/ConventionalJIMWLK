@@ -152,6 +152,34 @@ function Wilson_line_Ny()
       V
 end
 
+# momentum space Wilson_line
+function V_k_a(V)
+    V_k_a=zeros(ComplexF32,Ng,N,N)
+    V_tmp_a=zeros(ComplexF32,N,N)
+    for a in 1:Ng
+        for i in 1:Nc, j in 1:Nc
+           V_tmp_a[i,j]=2*tr(V[i,j,:,:]*t[a])
+        end
+
+         V_k_a[a,:,:]=fft_p*V_tmp_a
+    end
+    return V_k_a
+end
+#Momentum space dipole
+function Dk_a(V)
+       Vk=V_k_a(V)
+       #Vk_prime=zeros(ComplexF32,N,N)
+       D_k=zeros(ComplexF32,N,N)
+
+       for j in 1:N, i in 1:N
+            #Vk_tmp=sum(2*t[a]*tr(Vk[i,j,:,:]*t[a]) for a in 1:Ng)
+            #Vk_prime[i,j,:,:]=Vk_tmp
+            D_k[i,j]=sum(Vk[a,i,j]*conj(Vk[a,i,j]) for a in 1:Ng )/2Nc
+       end
+
+   return D_k
+end
+
 
 # momentum space Wilson_line
 function V_k!(V)
@@ -215,6 +243,26 @@ for i in 1:N/2
     data_dipole[i,1]=i
     data_dipole[i,2]=
 end
+
+
+data_v=load("wilson_line.jld2", "V_data")
+
+D_v=Dr(data_v)
+
+dipole_v=zeros(Float32,Int(N/2),2)
+
+
+for i in 1:Int(N/2)
+    dipole_v[i,1]=i
+    dipole_v[i,2]=D_v[i]
+end
+
+plot(dipole_v[3:100,1],dipole_v[3:100,2],label="vladi dipole data")
+
+
+(r,s)=Dr_prime(data_v)
+
+plot(r,s,label="vladi dipole data")
 
 
 
