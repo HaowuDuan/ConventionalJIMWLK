@@ -4,7 +4,7 @@ Pkg.activate(".")
 
 using DelimitedFiles
 using StaticArrays
-using LinearAlgebras
+using LinearAlgebra
 using LaTeXStrings
 using Random
 using Distributions
@@ -23,27 +23,24 @@ using BenchmarkTools
 include("SU3.jl")
 
 
-
 #longitudinal layers
-Ny=100
+const Ny=50
 # Transverse lattice size in one direction
-N=64
+const N=64*4
+#lattice size
+const L=32
 # lattice spacing
-a=32/N
+const a=L/N
 # infra regulator m
-m=1/32
+const m2=(0.05)^2#1/L
 #
-gμ=1
-
+const gμ=1
 #
-Nc=3
-# number of configurations
-N_config=100
-# anything will be updated with new N
+const Nc=3
 
-rng = MersenneTwister(1234)
+const Ng=Nc^2-1
 
-
+const αₛ=1
 
 begin
     # define the correct wave number
@@ -59,135 +56,286 @@ begin
     rho=randn(ComplexF32, (N,N))
     fft_p=plan_fft(rho; flags=FFTW.MEASURE, timelimit=Inf)
     ifft_p=plan_ifft(rho; flags=FFTW.MEASURE, timelimit=Inf)
+
+    seed=abs(rand(Int))
+    rng=MersenneTwister(seed)
+
 end
 
 
-# functions to compute fundamental wilson line for a single configuration
+#functions to compute fundamental wilson line for a single configuration
 #function to compute rho_k
 function rho_k()
     # set the seed for testing purpose
-    rng = MersenneTwister()
-    fft(rand(rng,Normal(0,gμ/sqrt(Ny)),N,N))# draw the color charge density from N(0,1)                                # for each layer, each point, and each color
+    # rng = MersenneTwister()
+
+    fft_p*rand(rng,Normal(0,gμ/(sqrt(Ny)*a)),N,N)# draw the color charge density from N(0,1)                                # for each layer, each point, and each color
 end
-
-
-
 #function to compute field A(x) for a fixed color
 function Field(ρ)
-        A_k=similar(ρ)
-        for l in 1:N, n in 1:N
-            A_k[n,l]=ρ[n,l]/(K2[n,l].+m^2)
+
+        Threads.@threads for l in 1:N
+            for n in 1:N
+            ρ[n,l]=ρ[n,l]/(K2[n,l].+m2)
+            end
         end
-        real(ifft(A_k))
+        # This is the problem !!!!!!!!, okie, I know why. Things blows up when m^2 is too small.
+        ρ[1,1] = 0.0im
+
+      real.(ifft_p*ρ)
 end
-#@btime Field()
+
 #function to compute a single layer wilson line
 function Wilson_line()
-     Vₓ_arg=randn(ComplexF32, (N,N,3,3))
-     Vₓ=randn(ComplexF32, (N,N,3,3))
-     for a in 1:8
-         ρₖ=rho_k()
-         tmp_A=Field(ρₖ)
-          if a ==1
-            for l in 1:N, n in 1:N
-                Vₓ_arg[n,l,:,:]=-im*tmp_A[n,l]*t[a]
-            end
-         else
-             for l in 1:N, n in 1:N
-               Vₓ_arg[n,l,:,:]=-im*tmp_A[n,l]*t[a]+Vₓ_arg[n,l,:,:]
-             end
+     Vₓ_arg=zeros(ComplexF32, (N,N,Nc,Nc))
+     Vₓ=zeros(ComplexF32, (N,N,Nc,Nc))
+
+
+     for a in 1:Ng
+         ρ=rho_k()
+         # This is the problem 2
+         A_tmp=Field(ρ)
+         for l in 1:N, n in 1:N
+               Vₓ_arg[n,l,:,:]=A_tmp[n,l]*t[a]+Vₓ_arg[n,l,:,:]
          end
      end
 
+
      for l in 1:N, n in 1:N
-         Vₓ[n,l,:,:]=exp(Vₓ_arg[n,l,:,:])
+         V_tmp=@view Vₓ_arg[n,l,:,:]
+         Vₓ[n,l,:,:].= exp(1.0im*V_tmp)
      end
-     Vₓ
+      Vₓ
 end
 
-#@btime Wilson_line()
-
-#taking product for multiple layers
 function Wilson_line_Ny()
-    V=Wilson_line()
-     Threads.@threads for ny in 2:Ny
+    # p=Progress(Ny)
+     V=Wilson_line()
+     Threads.@threads for ny in 1:Ny-1
               W=Wilson_line()
            for l in 1:N, n in 1:N
               V[n,l,:,:]=W[n,l,:,:]* V[n,l,:,:]
             end
+            #next!(p)
         end
       V
 end
 
-#@btime Wilson_line_Ny()
-# To compute evolutions in both hamiltonian form and the symmetric form, just to test
-
-
-
-
-# functions to compute dipole correlators for a single configuration
-
-dipole_tmp=zeros(N,N,N,N)
-r_size=40*(N÷64)
-dipole_r_tmp=zeros(r_size,2)
-# for data storage
-data_dipole_64=zeros(100,r_size,2)
-data_dipole_128=zeros(100,r_size,2)
-
-function r(x,y)
-        x=@SVector[x[1],x[2]]
-        y=@SVector[y[1],y[2]]
-
-        r=sqrt(dot(x-y,x-y))÷1
-        Int(r)
+# momentum space Wilson_line
+function V_k(V)
+    Vk=zeros(ComplexF32,N,N,Nc,Nc)
+    for b in 1:Nc, a in 1:Nc
+        Vk[:,:,a,b]=fft_p*@view V[:,:,a,b]
+    end
+    return Vk
 end
 
-function D_xy()
-         V_tmp=Wilson_line_Ny()
-          Threads.@threads for y2 in 1:N
-              for y1 in 1:N,x2 in 1:N,x1 in 1:N
-                dipole_tmp[x1,x2,y1,y2]=real(tr(conj(transpose(V_tmp[x1,x2,:,:]))*V_tmp[y1,y2,:,:]))/Nc
+#Momentum space dipole
+function Dk(V)
+       Vk=V_k(V)
+       D_k=zeros(Float32,N,N)
+
+       for j in 1:N, i in 1:N
+           D_k[i,j]=@views real(tr(Vk[i,j,:,:]*adjoint(Vk[i,j,:,:])))/Nc
+       end
+   return D_k
+end
+
+
+function Dr_prime(V,Δ)
+     N_step=Int(N/Δ)
+     Δ_size=Δ*a
+
+     D_k= Dk(V)
+     #D_x= zeros(Float32,N,N)
+
+     D_x= ifft(D_k)/N^2
+
+     D_r= zeros(Float32,N_step)
+     N_r= zeros(Float32,N_step)
+
+
+
+     for i in 1: Int(N/2), j in 1:Int(N/2)
+             r_index=floor(Int,sqrt(((i-1)*a)^2+((j-1)*a)^2)/Δ_size)+1
+         if  r_index< N_step
+             D_r[r_index]= D_r[r_index]+ real(D_x[i,j])
+             N_r[r_index]= N_r[r_index]+1
+         end
+     end
+
+     for r in 1:Int(N_step)
+         D_tmp=D_r[r]
+         D_r[r]=D_tmp/(N_r[r]+1e-6)
+     end
+
+     return  (collect(1:N_step)*Δ_size,D_r)
+end
+
+
+function K(i,j)
+    [(2/a)* sin(wave_number[i]/2), (2/a)* sin(wave_number[j]/2)]/(K2[i,j]+m2)
+end
+
+function ξ_generator()
+     ξ_tmp=rand(rng,Normal(0,1),N,N,2,Ng)
+end
+
+
+function ξ_left(ξ_data, V_input)
+     ξ_tmp=zeros(ComplexF32,N,N,2,Nc,Nc)
+     Threads.@threads for i in 1:2
+         for n in 1:N
+              for m in 1:N
+                   V_tmp=@view V_input[m,n,:,:]
+                   V_dagger=adjoint(V_tmp)
+                   ξ_tmp[m,n,i,:,:]=sum(ξ_data[m,n,i,a]*(V_tmp*t[a]*V_dagger) for a in 1:Ng)
+              end
+
+          end
+      end
+     return  ξ_tmp
+end
+
+function ξ_right(ξ_data,V_input)
+    ξ_tmp=zeros(ComplexF32,N,N,2,Nc,Nc)
+    Threads.@threads for i in 1:2
+        for n in 1:N
+             for m in 1:N
+                  ξ_tmp[m,n,i,:,:].=sum(ξ_data[m,n,i,a]*t[a] for a in 1:Ng)
+             end
+
+         end
+     end
+    return ξ_tmp
+end
+
+function convolution(ξ_local)
+    ξ_tmp_k=similar(ξ_local)
+    ξ_tmp_k_prime=zeros(ComplexF32,N,N,Nc,Nc)
+    ξ_tmp_x=zeros(ComplexF32,N,N,Nc,Nc)
+    Threads.@threads for i in 1:2
+        for j in 1:Nc
+                for k in 1:Nc
+                   ξ_tmp_k[:,:,i,j,k]=fft_p*ξ_local[:,:,i,j,k]
+                end
+        end
+    end
+
+    Threads.@threads for n in 1:N
+        for m in 1:N
+            k_tmp=K(m,n)
+            ξ_tmp_k_prime[m,n,:,:]=sum(ξ_tmp_k[m,n,i,:,:]*k_tmp[i] for i in 1:2)
+        end
+    end
+
+    Threads.@threads for j in 1:Nc
+            for k in 1:Nc
+               ξ_tmp_x[:,:,j,k]=ifft_p*ξ_tmp_k_prime[:,:,j,k]
+            end
+    end
+
+
+    return  ξ_tmp_x
+end
+
+function exp_left(ξ_data, V_input, step)
+     ξ_local=ξ_left(ξ_data, V_input)
+     ξ_x=zeros(ComplexF32,N,N,Nc,Nc)
+     e_left=similar(ξ_x)
+
+     ξ_x=convolution(ξ_local)
+
+     Threads.@threads for m in 1:N
+         for n in 1:N
+             e_left[n,m,:,:]=exp(2sqrt(step*αₛ)*ξ_x[n,m,:,:])
+         end
+     end
+
+     return e_left
+end
+
+
+function exp_right(ξ_data, V_input, step)
+    ξ_local=ξ_right(ξ_data, V_input)
+    ξ_x=zeros(ComplexF32,N,N,Nc,Nc)
+    e_right=similar(ξ_x)
+
+    ξ_x=convolution(ξ_local)
+
+    Threads.@threads for m in 1:N
+        for n in 1:N
+            e_right[n,m,:,:]=exp(-2sqrt(step*αₛ)*ξ_x[n,m,:,:])
+        end
+    end
+    return e_right
+end
+
+function JIMWLK(Y_f,N_of_steps, V_input)
+      Δ=Y_f/N_of_steps
+
+      V_f=zeros(ComplexF32,N,N,Nc,Nc)
+
+      ξ_tmp=ξ_generator()
+
+      factor_left=exp_left(ξ_tmp/a, V_input, 0.1)
+      factor_right=exp_right(ξ_tmp/a, V_input, 0.1)
+
+      for n in 1:N
+          for m in 1:N
+               V_tmp=@view V_input[m,n,:,:]
+               left_tmp=@view factor_left[m,n,:,:]
+               right_tmp=@view factor_right[m,n,:,:]
+               W_tmp= left_tmp*V_tmp*right_tmp
+               V_f[m,n,:,:].=W_tmp
+          end
+      end
+#=
+      Threads.@threads for i in 1:N_of_steps-1
+          ξ=ξ_generator()
+
+          factor_left=exp_left(ξ, V_e, Δ)
+          factor_right=exp_right(ξ, V_e, Δ)
+
+          for n in 1:N
+              for m in 1:N
+                  V_tmp=@view V_e[m,n,:,:]
+                  V_e[m,n,:,:]=factor_left[m,n,:,:]*V_tmp*factor_right[m,n,:,:]
               end
           end
-          dipole_tmp
+      end
+=#
+     V_f
 end
 
-function D_r()
-         dipole_tmp=D_xy()
-         Threads.@threads for y2 in 1:N
-             for y1 in 1:N,x2 in 1:N,x1 in 1:N
-              x=[x1,x2]
-              y=[y1,y2]
-              i=r(x,y)
+V_test=Wilson_line_Ny()
 
-              if i<r_size
-                   dipole_r_tmp[i+1,2]=dipole_r_tmp[i+1,2]+dipole_tmp[x1,x2,y1,y2]
-                   dipole_r_tmp[i+1,1]=dipole_r_tmp[i+1,1]+1
-              end
-            end
-        end
+ξ_test=ξ_generator()
 
+V_final=JIMWLK(0.1,1,V_test)
 
-        Threads.@threads for i in 1:r_size
-                dipole_r_tmp[i,2]=dipole_r_tmp[i,2]/dipole_r_tmp[i,1]
-                dipole_r_tmp[i,1]=i-1
-        end
-        dipole_r_tmp
-end
+(r_i,D_i)=Dr_prime(V_test,2)
+(r_f,D_f)=Dr_prime(V_final,2)
+(r_t,D_t)=Dr_prime(V_e_t,2)
+
+plot(r_i,D_i,label="initial")
+plot!(r_f,D_f,label="final")
+plot!(r_t,D_t,label="test")
 
 
-function BOOTSTRAP(data,N_of_config)
-     bootstrap=zeros(N_of_config)
-     for i in 1:N_of_config
-     BS_sample = similar(bootstrap)
-     for j in 1:N_of_config
-     index=rand(1:N_of_config)
-     BS_sample[j]=data[index]
-     end
-     bootstrap[i]=mean(BS_sample)
-     end
+V_e_t=zeros(ComplexF32,N,N,Nc,Nc)
 
-     bootstrap_MEAN = mean(bootstrap)
-     bootstrap_STD = std(bootstrap)
-     bootstrap_MEAN,bootstrap_STD
+ξ_tmp_t=ξ_generator()
+
+factor_left_t=exp_left(ξ_tmp_t/a, V_test, 0.1)
+factor_right_t=exp_right(ξ_tmp_t/a, V_test, 0.1)
+
+for n in 1:N
+    for m in 1:N
+         V_tmp=@view V_test[m,n,:,:]
+         left_tmp=@view factor_left_t[m,n,:,:]
+         right_tmp=@view factor_right_t[m,n,:,:]
+         W_tmp= left_tmp*V_tmp*right_tmp
+         V_e_t[m,n,:,:]=W_tmp
+    end
 end
