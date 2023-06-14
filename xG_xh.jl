@@ -33,7 +33,7 @@ const L=32
 # lattice spacing
 const a=L/N
 # infra regulator m
-const m2=(0.05)^2#1/L
+const m2=(0.01)^2#1/L
 #
 const gμ=1
 #
@@ -78,6 +78,7 @@ function rho_k()
 
     fft_p*rand(rng,Normal(0,gμ/(sqrt(Ny)*a)),N,N)# draw the color charge density from N(0,1)                                # for each layer, each point, and each color
 end
+
 #function to compute field A(x) for a fixed color
 function Field(ρ)
 
@@ -148,6 +149,8 @@ function Dk(V)
    return D_k
 end
 
+
+
 #=
 function Dr(V)
 
@@ -206,6 +209,7 @@ function Dr_prime(V,Δ)
      return  (collect(1:N_step)*Δ_size,D_r)
 end
 
+
 function BOOTSTRAP(data,N_of_config)
      bootstrap=zeros(N_of_config)
      for i in 1:N_of_config
@@ -222,25 +226,52 @@ function BOOTSTRAP(data,N_of_config)
      (bootstrap_MEAN,bootstrap_STD)
 end
 
-
-function Sat_Mom(data_diople)
-          for i in 1:length(data_diople[:,1])
-                  δ=data_diople[i,2]-exp(-0.5)
+function Sat_Mom(r,D)
+          Qs=zeros(1)
+          Rs=zeros(1)
+          for i in 1:length(r)
+                  δ=D[i]-exp(-0.5)
                  if δ<=0
-                      Qs= sqrt(2)/data_diople[i,1]
-                      Rs = data_diople[i,1]
+                      Qs = sqrt(2)/r[i]
+                      Rs = r[i]
                      break
                  end
           end
-    return (Qs,R)
+    return (Qs,Rs)
 end
-
 function La_mod(n,N)
           if n <= N
               return n
           elseif n > N
               return 1
           end
+end
+
+function Gluon_field_center(V)
+    A=zeros(ComplexF32, (N,N,2,Ng))
+    Ax_tmp=zeros(ComplexF32, (Nc,Nc))
+    Ay_tmp=zeros(ComplexF32, (Nc,Nc))
+    for nx in 1:N
+        for ny in 1:N
+           V_tmp=@view V[nx,ny,:,:]
+           V_xp=@view V[mod(nx,N)+1,ny,:,:]
+           V_xm=@view V[mod(nx-2,N)+1,ny,:,:]
+           V_yp=@view V[nx,mod(ny,N)+1,:,:]
+           V_ym=@view V[nx,mod(ny-2,N)+1,:,:]
+
+
+
+            Ax_tmp.= adjoint(V_tmp)*(V_xp-V_xm)/(2im*a)
+            Ay_tmp.= adjoint(V_tmp)*(V_yp-V_ym)/(2im*a)
+
+            for a in 1:Ng
+                A[nx,ny,1,a]=2tr(Ax_tmp*t[a])
+                A[nx,ny,2,a]=2tr(Ay_tmp*t[a])
+            end
+
+        end
+    end
+    A
 end
 
 function Gluon_field(V)
@@ -279,7 +310,6 @@ function Gluon_field_k(A_field)
     return A_k
 end
 
-
 function xG_ij(A_field)
       Ak= Gluon_field_k(A_field)
       xG_k=zeros(ComplexF32, (N,N,2,2))
@@ -303,32 +333,43 @@ function xG_ij(A_field)
 end
 
 
-function xGh_r(xg_ij)
+function xGh_vs(A)
     size=floor(Int,N/2)
-    data_xG=zeros(Float32,size)
-    data_xh=zeros(Float32,size)
+    xG=zeros(Float32,size)
+    xh=zeros(Float32,size)
+    xG2=zeros(Float32,size)
+    xh2=zeros(Float32,size)
 
+    for r = 0:N÷2
+        for j in 1:N
+            for i in 1:N
 
-    for i in 1:size
-        data_xG[i]=8*pi*(xg_ij[i,1,1,1]+xg_ij[i,1,2,2])
-        data_xh[i]=8*pi*(xg_ij[i,1,1,1]-xg_ij[i,1,2,2])
+                @inbounds xG[r+1]  = xG[r+1] + sum(real(A[i,j,1,b]*A[mod(i+r-1,N)+1,j,1,b]) for b in 1:Nc^2-1)/(N^2)
+                @inbounds xG[r+1]  = xG[r+1] + sum(real(A[i,j,2,b]*A[mod(i+r-1,N)+1,j,2,b]) for b in 1:Nc^2-1)/(N^2)
+                @inbounds xh[r+1]  = xh[r+1] + sum(real(A[i,j,1,b]*A[mod(i+r-1,N)+1,j,1,b]) for b in 1:Nc^2-1)/(N^2)
+                @inbounds xh[r+1]  = xh[r+1] - sum(real(A[i,j,2,b]*A[mod(i+r-1,N)+1,j,2,b]) for b in 1:Nc^2-1)/(N^2)
+
+                @inbounds xG2[r+1]  = xG2[r+1] + sum(real(A[i,j,1,b]*A[i,mod(j+r-1,N)+1,1,b]) for b in 1:Nc^2-1)/(N^2)
+                @inbounds xG2[r+1]  = xG2[r+1] + sum(real(A[i,j,2,b]*A[i,mod(j+r-1,N)+1,2,b]) for b in 1:Nc^2-1)/(N^2)
+                @inbounds xh2[r+1]  = xh2[r+1] - sum(real(A[i,j,1,b]*A[i,mod(j+r-1,N)+1,1,b]) for b in 1:Nc^2-1)/(N^2)
+                @inbounds xh2[r+1]  = xh2[r+1] + sum(real(A[i,j,2,b]*A[i,mod(j+r-1,N)+1,2,b]) for b in 1:Nc^2-1)/(N^2)
+            end
+        end
     end
 
-    return  (collect(1:size)*a,data_xG,data_xh)
+    return  (collect(1:size)*a,xG,xh,xG2,xh2)
 end
 
 
-function xGh(xg_ij)
+function xGh_hd(xg_ij,Δ)
     N_step=floor(Int,N/2)
-    Δ_size=2*a
+    Δ_size=Δ*a
 
     xg_r= zeros(Float32,N_step)
     xh_r= zeros(Float32,N_step)
     N_r= zeros(Float32,N_step)
 
     for i in 1: Int(N/2), j in 1:Int(N/2)
-
-
             xg_tmp= xg_ij[i,j,1,1]+xg_ij[i,j,2,2]
             xh_tmp= -(xg_ij[i,j,1,1]+xg_ij[i,j,2,2])+2*i^2*xg_ij[i,j,1,1]/(i^2+j^2)+2*j^2*xg_ij[i,j,2,2]/(i^2+j^2)+2*i*j*(xg_ij[i,j,1,2]+xg_ij[i,j,2,1])/(i^2+j^2)
             r_index=floor(Int,sqrt(((i-1)*a)^2+((j-1)*a)^2)/Δ_size)+1
@@ -353,53 +394,28 @@ end
 
 v_test=Wilson_line_Ny()
 A_test=Gluon_field(v_test)
+
 xg_test=xG_ij(A_test)
 
-(r_d,dip)=Dr_prime(v_test,2)
-
-(r_t,xG_t,xh_t)=xG(xg_test)
-
-(r_t_2,xG_t_2,xh_t_2)=xGh(xg_test)
-plot(r_t_2,xG_t_2)
 
 
-plot(r_t,-xh_t)
-plot(r_t,xG_t)
-plot(r_d,dip)
+(r,dipole)=Dr_prime(V_test,2)
+
+(r1,xG_1,xh_1,xG_y,xh_y)=xGh_vs(A_test)
+
+(r2,xG_2,xh_2)=xGh_hd(xg_test,1)
+
+plot(r1,xG_1)
+plot(rc,xG_c)
+plot!(r,xG_y)
+plot!(r2,xG_2)
+
+plot(r1,xh_1)
+plot(rc,xh_c)
+
+plot!(r1,xh_y)
 
 
-
-data_xgh=zeros(20,128,3)
-
-P_gh=Progress(20)
-for i in 1:20
-    V_tmp=Wilson_line_Ny()
-    A_tmp=Gluon_field(V_tmp)
-
-    xg_ij_tmp=xG_ij(A_tmp)
-
-    (r_tmp,xg_tmp,xh_tmp)=xG(xg_ij_tmp)
-
-    data_xgh[i,:,1]=r_tmp
-
-    data_xgh[i,:,2]=xg_tmp
-
-    data_xgh[i,:,3]=xh_tmp
-
-    next!(P_gh)
-end
-
-data_xg=zeros(128)
-
-data_xh=zeros(128)
-
-for i in 1:128
-    data_xg[i]=mean(data_xgh[:,i,2])
-
-    data_xh[i]=mean(data_xgh[:,i,3])
-end
-
-
-plot(data_xgh[1,1:50,1],data_xg[1:50],label="xG")
-
-plot(data_xgh[1,1:50,1],data_xh[1:50],label="xh")
+plot!(r2,xh_2)
+plot!(r1,(xh_1.+xh_y)./2)
+xlims!(0,5)

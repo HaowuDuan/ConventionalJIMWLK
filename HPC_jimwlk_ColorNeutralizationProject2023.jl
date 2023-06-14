@@ -1,4 +1,6 @@
 cd(@__DIR__)
+using Pkg
+Pkg.activate(".")
 using Distributions
 using StaticArrays
 using Random
@@ -6,7 +8,7 @@ using GellMannMatrices
 using LinearAlgebra
 using FFTW
 using Printf
-
+using Plots
 const mu² = 1.0
 
 const l = 32
@@ -16,16 +18,17 @@ const a2=a^2
 const Ny = 50
 const m² = 0.01^2
 const Nc=3
+const Ng=Nc^2-1
 const alpha_fc = 1 # Y is measured in alpha_fc
 
 const variance_of_mv_noise = sqrt(mu² / (Ny * a^2))
 
 ID = 1
 
-try 
+try
     global ID=ARGS[1]
-catch 
-end 
+catch
+end
 
 
 seed=abs(rand(Int))
@@ -39,6 +42,7 @@ function generate_rho_fft_to_momentum_space(rho,fft_plan)
     rho .= fft_plan*rho
 end
 
+
 function inv_propagator_kernel(i,j)
 	return (a2 / (a2 * m² + 4.0 * sin(π*i/N)^2 + 4.0 * sin(π*j/N)^2))
 end
@@ -47,14 +51,14 @@ function inv_propagator(D)
     x = collect(0:N-1)
     y = copy(x)
     D .= map(Base.splat(inv_propagator_kernel), Iterators.product(y, x))
-end 
+end
 
 function compute_field!(rhok, D, ifft_plan)
 	# Modifies the argument to return the field
     rhok .= rhok .* D
     # factor of a^2 was removed to account for the normalization of ifft next
     # ifft computes sum / (lenfth of array) for each dimension
-    #rhok[1,1] = 0.0im # remove zero mode 	
+    #rhok[1,1] = 0.0im # remove zero mode
     rhok .= ifft_plan*rhok
 end
 
@@ -97,7 +101,7 @@ function compute_path_ordered_fund_Wilson_line()
     V = compute_local_fund_Wilson_line()
     for i in 1:Ny-1
 		println(i)
-		flush(stdout) 
+		flush(stdout)
         tmp=compute_local_fund_Wilson_line()
         Threads.@threads for j in 1:N
             for i in 1:N
@@ -172,6 +176,7 @@ end
 function k2(i,j)
     return((4.0 * sin(π*(i-1)/N)^2 + 4.0 * sin(π*(j-1)/N)^2)/a^2)
 end
+
 
 
 function bin_x(S)
@@ -283,6 +288,7 @@ function rotated_noise(ξ,ξ_R_k,V,fft_plan)
 end
 
 
+
 function exp_Left(ξ_k, K, ξ_out, exp_out, ΔY, ifft_plan)
     convolution!(K, ξ_k, ξ_out,ifft_plan)
     pref=sqrt(alpha_fc*ΔY)/π
@@ -338,11 +344,11 @@ function WWfield(V, A)
                 @inbounds V_ip1j=@view V[mod(i,N)+1,j,:,:]
 
                 @inbounds V_im1j=@view V[mod(i-2,N)+1,j,:,:]
-                
+
                 @inbounds V_ijp1=@view V[i,mod(j,N)+1,:,:]
-                
+
                 @inbounds V_ijm1=@view V[i,mod(j-2,N)+1,:,:]
-                
+
                 dvdx .= (V_ip1j-V_im1j)*0.5/a
                 dvdy .= (V_ijp1-V_ijm1)*0.5/a
 
@@ -353,7 +359,7 @@ function WWfield(V, A)
 
             end
         end
-    end 
+    end
 end
 
 
@@ -364,17 +370,17 @@ function xGcom(V, A,xG,xh, adD)
         for j in 1:N
             for i in 1:N
                 @inbounds V_ij=@view V[i,j,:,:]
-                
+
                 @inbounds xG[r+1]  = xG[r+1] + sum(A[1,b,i,j]*A[1,b,mod(i+r-1,N)+1,j] for b in 1:Nc^2-1)/(N^2)
                 @inbounds xG[r+1]  = xG[r+1] + sum(A[2,b,i,j]*A[2,b,mod(i+r-1,N)+1,j] for b in 1:Nc^2-1)/(N^2)
-                @inbounds xh[r+1]  = xh[r+1] + sum(A[1,b,i,j]*A[1,b,mod(i+r-1,N)+1,j] for b in 1:Nc^2-1)/(N^2) 
+                @inbounds xh[r+1]  = xh[r+1] + sum(A[1,b,i,j]*A[1,b,mod(i+r-1,N)+1,j] for b in 1:Nc^2-1)/(N^2)
                 @inbounds xh[r+1]  = xh[r+1] - sum(A[2,b,i,j]*A[2,b,mod(i+r-1,N)+1,j] for b in 1:Nc^2-1)/(N^2)
-                                    
+
                 @inbounds V_ij_shift=@view V[mod(i+r-1,N)+1,j,:,:]
-                    
+
                 @inbounds adD[r+1] = adD[r+1] + 2/(Nc^2-1)*sum(tr(V_ij_shift'*t[b]*V_ij_shift*V_ij'*t[b]*V_ij)  for b in 1:Nc^2-1)/(N^2)
-                
-                 
+
+
             end
         end
     end
@@ -384,8 +390,8 @@ end
 
 function observables(io,Y,V)
 
-   
-    
+
+
     Vc=compute_field_of_V_components(V)
     Vk=FFT_Wilson_components(Vc)
     S=dipole(Vk)
@@ -397,24 +403,22 @@ function observables(io,Y,V)
 
 
     if(abs(Y%0.1)<0.01)
-        A=zeros(ComplexF32, (2,Nc^2-1,N,N)) 
+        A=zeros(ComplexF32, (2,Nc^2-1,N,N))
         xG = zeros(ComplexF32, N÷2+1)
-        xh = zeros(ComplexF32, N÷2+1) 
-        adD = zeros(ComplexF32, N÷2+1) 
+        xh = zeros(ComplexF32, N÷2+1)
+        adD = zeros(ComplexF32, N÷2+1)
         @time WWfield(V, A)
         @time xGcom(V, A,xG,xh,adD)
         filenameY = round(Y, digits=1)
         open("data/DxG_$(ID)_$filenameY.dat","w") do out
             for r in 0:N÷2
                 Printf.@printf(out, "%f %.14f %.14f %.14f %.14f %f\n", r*a, real(S[r+1,1]),  real(adD[r+1]), real(xG[r+1]), real(xh[r+1]), Y)
-            end 
+            end
         end
 
-    end 
+    end
 
     Printf.@printf(io, "%f %f\n", Y, Qs)
-
-
 
 
 
@@ -472,4 +476,38 @@ V=compute_path_ordered_fund_Wilson_line()
 
 Vc=compute_field_of_V_components(V)
 
-@time JIMWLK_evolution(V,2.01,0.01)
+
+function xG(#=V,=# A, xG, xh#=,adD=#)
+    #V_dagger=zeros(ComplexF32, (Nc,Nc))
+    #V_dagger_shift=zeros(ComplexF32, (Nc,Nc))
+    Threads.@threads for r = 0:N÷2
+        for j in 1:N
+            for i in 1:N
+                @inbounds V_ij=@view V[i,j,:,:]
+
+                @inbounds xG[r+1]  = xG[r+1] + real(sum(A[1,b,i,j]*A[1,b,mod(i+r-1,N)+1,j] for b in 1:Nc^2-1)/(N^2))
+                @inbounds xG[r+1]  = xG[r+1] + real(sum(A[2,b,i,j]*A[2,b,mod(i+r-1,N)+1,j] for b in 1:Nc^2-1)/(N^2))
+                @inbounds xh[r+1]  = xh[r+1] + real(sum(A[1,b,i,j]*A[1,b,mod(i+r-1,N)+1,j] for b in 1:Nc^2-1)/(N^2))
+                @inbounds xh[r+1]  = xh[r+1] - real(sum(A[2,b,i,j]*A[2,b,mod(i+r-1,N)+1,j] for b in 1:Nc^2-1)/(N^2))
+
+            #    @inbounds V_ij_shift=@view V[mod(i+r-1,N)+1,j,:,:]
+
+            #    @inbounds adD[r+1] = adD[r+1] + 2/(Nc^2-1)*sum(tr(V_ij_shift'*t[b]*V_ij_shift*V_ij'*t[b]*V_ij)  for b in 1:Nc^2-1)/(N^2)
+
+
+            end
+        end
+    end
+end
+
+
+# calculate gluon field
+A_r=zeros(ComplexF32,(2,Ng,N,N))
+Data_xG=zeros(N÷2)
+Data_xh=zeros(N÷2)
+WWfield(V, A_r)
+
+xG(#=V,=# A_r,Data_xG,Data_xh #=,adD=#)
+
+plot(collect(1:N÷2)*a,Data_xG)
+plot(collect(1:N÷2)*a,Data_xh)

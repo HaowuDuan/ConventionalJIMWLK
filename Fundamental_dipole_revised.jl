@@ -48,7 +48,6 @@ N_config=10
 #For testing only, set seed to 1234
 
 
-
 begin
     # define the correct wave number
     wave_number=fftfreq(N,2π)
@@ -68,7 +67,6 @@ begin
     rng=MersenneTwister(seed)
 
 end
-
 
 #functions to compute fundamental wilson line for a single configuration
 #function to compute rho_k
@@ -231,7 +229,7 @@ function Sat_Mom(data_diople)
                      break
                  end
           end
-    return (Qs,R)
+    return (Qs,Rs)
 end
 
 function La_mod(n,N)
