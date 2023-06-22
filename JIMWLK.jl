@@ -3,7 +3,7 @@ using Pkg
 Pkg.activate(".")
 Pkg.add("JLD2")
 using DelimitedFiles
-using StaticArrays
+# using StaticArray
 using LinearAlgebra
 using LaTeXStrings
 using Random
@@ -20,12 +20,17 @@ using StatsPlots
 using Measures
 using SpecialFunctions
 using ArbNumerics
+using QuadGK
+#using DifferentialEquation
+using ForwardDiff
+using Interpolations
 # This file is a test of calculation of the dipole correlator in MV model.
 # All calculation will be done at fixed parameters.
 #Once the code is working, it will be modifined and put into a bigger CGC package where the functions can be called.
 #pre-defined functions
 #SU(3) generators, t[a, i, j] is 8*3*3 matrix, T[a,b,c] is 8*8*8 matrix.
 include("SU3.jl")
+
 
 #longitudinal layers
 const Ny=50
@@ -66,13 +71,16 @@ begin
 end
 
 
+
+
 #functions to compute fundamental wilson line for a single configuration
 #function to compute rho_k
 function rho_k()
     # set the seed for testing purpose
     # rng = MersenneTwister()
-    fft_p*rand(rng,Normal(0,gμ/(sqrt(Ny)*a)),N,N)# draw the color charge density from N(0,1)                                # for each layer, each point, and each color
+    fft_p*rand(rng,Normal(0,gμ*1.5/(sqrt(Ny)*a)),N,N)# draw the color charge density from N(0,1)                                # for each layer, each point, and each color
 end
+
 #function to compute field A(x) for a fixed color
 function Field(ρ)
 
@@ -176,16 +184,14 @@ function Dr_prime(V,Δ)
 end
 
 
+
 function K(i,j)
     [(2/a)* sin(wave_number[i]/2), (2/a)* sin(wave_number[j]/2)]/(K2[i,j]+m2)
 end
 
-
-
 function ξ_generator()
      ξ_tmp=rand(rng,Normal(0,1),N,N,2,Ng)
 end
-
 
 function ξ_left(ξ_data, V_input)
      ξ_tmp=zeros(ComplexF32,N,N,2,Nc,Nc)
@@ -336,7 +342,14 @@ V_test=Wilson_line_Ny()
 
 
 V_test2=Wilson_line_Ny()
+
+
+Sat_Mom(r_i,D_i)[1]
+
+
 data_i=zeros(ComplexF32,N,N,Nc,Nc,10)
+
+
 dipole_i=zeros(129,2,10)
 Threads.@threads for i in 1:10
     data_i[:,:,:,:,i]=Wilson_line_Ny()
@@ -354,6 +367,7 @@ V_4=JIMWLK(0.01,200,V_test)
 
 
 (r_i,D_i)=Dr_prime(V_test,2)
+
 (r_i2,D_i2)=Dr_prime(V_test2,2)
 
 (r_f,D_f)=Dr_prime(V_final,2)
@@ -370,6 +384,7 @@ for i in 2:10
     plot!(dipole_i[:,1,i]*Sat_Mom(dipole_i[:,1,i],dipole_i[:,2,i])[1],dipole_i[:,2,i])
 end
 
+plot(r_i*Sat_Mom(r_i,D_i)[1],D_i,label="Y=0.01*0")
 
 plot!(r_f*Sat_Mom(r_f,D_f)[1],D_f,label="Y=0.01*10")
 
@@ -442,8 +457,6 @@ plot(ylabel = L"-\ln D(r)",
 
 plot!(xlims=(0,6))
 
-
-
 # for initial condition
 dipole_initial_average=zeros(129)
 for i in 1:10
@@ -487,6 +500,7 @@ function D_MV(r,m)
     return exp(-r^2*log(1/(r^2*(m^2)+1e-6)+exp(1))/4)
 end
 
+
 function D_GBW(r)
     return exp(-r^2/4)
 end
@@ -496,27 +510,28 @@ function D_full_MV(r,m)
 end
 
 function adj_dipole(f_dipole)
-    return (Nc^2*f_dipole-1)/Ng
+    return exp(log(f_dipole)*Ng/Nc)
 end
 
-
-function WW_exact_asy(r,m,xG,xh)
+function WW_exact_asy(r,m)
      f_dipole=D_MV(r,0.1)
-     ad=adj_dipole(f_dipole)
+     ad= adj_dipole(f_dipole)
      Γ₁= log(1/(r^2*(m^2)+1e-6)+exp(1))-1
      Γ = r^2*log(1/(r^2*(m^2)+1e-6)+exp(1))
      xG=(1-ad)*(Γ₁-1)/Γ
      xh=(1-ad)/Γ
+     return (xG,xh)
 end
 
-function WW_exact_full(r,m,xG,xh)
+function WW_exact_full(r,m)
     f_dipole=D_MV(r,0.1)
     ad=adj_dipole(f_dipole)
     Γ=(1-m*r*besselk(1,m*r))/m^2
     Γ₁= besselk(0,m*r)/2
     Γ₂= -besselk(1,m*r)*m/(4r)
-    xG=(1-ad)*(Γ₁-r^2*Γ₂)/Γ
-    xh=(1-ad)* r^2*Γ₂/Γ
+    xG=(1-ad)*(Γ₁+r^2*Γ₂)/Γ
+    xh=-(1-ad)* r^2*Γ₂/Γ
+    return (xG,xh)
 end
 
 R=LinRange(0,20,2000)
@@ -526,33 +541,275 @@ d_full_MV=similar(R)
 
 
 for i in 1:2000
-    d_MV[i]=D_MV(R[i],0.1)
-    d_full_MV[i]=D_full_MV(R[i],0.1)
+    d_MV[i]=D_MV(R[i],0.2)
+    d_full_MV[i]=D_full_MV(R[i],0.2)
 end
 
-Sat_Mom(R,d_MV)[1]
-Sat_Mom(R,d_full_MV)[1]
+Sat_Mom(R1,d_MV)[1]
+Sat_Mom(R1,d_full_MV)[1]
 
-plot(R*Sat_Mom(R,d_MV)[1],d_MV,label="MV small m asymptotic, m=0.1")
-plot!(R*Sat_Mom(R,d_full_MV)[1],d_full_MV,label="MV Full, m=0.1")
+plot(R1*Sat_Mom(R1,d_MV)[1],d_MV,label="MV small m asymptotic, m=0.1")
+plot!(R1*Sat_Mom(R1,d_full_MV)[1],d_full_MV,label="MV Full, m=0.1")
 plot!(ylabel = L"D(r)",
     xlabel = L"rQ_s")
 xlims!(0,10)
 
 
-
-plot(RL,-Log.(d_MV)/Sat_Mom(RL,d_MV)[1]^2,label="MV small m asymptotic")
-plot!(RL,-Log.(d_full_MV)/Sat_Mom(RL,d_full_MV)[1]^2,label="MV Full")
+plot(R1*Sat_Mom(R1,d_MV)[1],-Log.(d_MV)/Sat_Mom(R1,d_MV)[1]^2,label="MV small m asymptotic")
+plot(R1*Sat_Mom(R1,d_full_MV)[1],-Log.(d_full_MV)/Sat_Mom(R1,d_full_MV)[1]^2,label="MV Full")
 plot!(ylabel = L"\Gamma(r)",
     xlabel = L"rQ_s")
-xlims(0,10)
+savefig("Gamma_exact.pdf")
+xlims!(0,25)
 
 
 
 # Caculate instead of dipole, xG, xh
 
+xG_a=similar(R)
+xh_a=similar(R)
 
-data_test = [1  2
-             3  4]
-println(data_test)
-cleaned_data = replace(data_test, r"[;\[\]]" => "")
+xG_f=similar(R)
+xh_f=similar(R)
+
+for i in 1:2000
+    asy_tmp=WW_exact_asy(R[i],0.1)
+    full_tmp=WW_exact_full(R[i],0.1)
+    xG_a[i]=asy_tmp[1]
+    xh_a[i]=asy_tmp[2]
+
+    xG_f[i]=full_tmp[1]
+    xh_f[i]=full_tmp[2]
+end
+
+plot(R*Sat_Mom(R,d_MV)[1],xG_a,label="xG, MV small m asymptotic")
+plot!(R*Sat_Mom(R,d_full_MV)[1],xG_f,label="xG, MV full")
+plot!(ylabel = L"xG^{(1)}(r)",
+        xlabel = L"rQ_s",
+        box = :on,
+        foreground_color_legend = nothing,
+        fontfamily = "Times New Roman",
+        xtickfontsize = 8,
+        ytickfontsize = 8,
+        xguidefontsize = 15,
+        yguidefontsize = 15,
+        thickness_scaling=1,
+        legendfontsize=10,
+        legend_font_pointsize=8,
+        legendtitlefontsize=8,
+        markersize=3,yguidefontrotation=-90,left_margin=12mm,bottom_margin=5mm)
+xlims!(0,20)
+
+
+savefig("xG_exact.pdf")
+
+plot(R*Sat_Mom(R,d_MV)[1],xh_a,label="xh, MV small m asymptotic")
+plot!(R*Sat_Mom(R,d_full_MV)[1],xh_f,label="xh, MV full")
+plot!(ylabel = L"xh^{(1)}(r)",
+        xlabel = L"rQ_s",
+        box = :on,
+        foreground_color_legend = nothing,
+        fontfamily = "Times New Roman",
+        xtickfontsize = 8,
+        ytickfontsize = 8,
+        xguidefontsize = 15,
+        yguidefontsize = 15,
+        thickness_scaling=1,
+        legendfontsize=10,
+        legend_font_pointsize=8,
+        legendtitlefontsize=8,
+        markersize=3,yguidefontrotation=-90,left_margin=12mm,bottom_margin=5mm)
+xlims!(0,20)
+
+savefig("xh_exact.pdf")
+
+function color_neutral_gamma(r,Q)
+         quadgk(x ->2*(r^2)*x^3*(1-besselj(0,x))/(x^2+Q^2*r^2)/(x^2)^2 ,0,313.374,rtol=1e-9)
+end
+
+function dipole_color_neutral(r,Q)
+         return exp(-color_neutral_gamma(r,Q)[1])
+end
+
+
+
+# color neutral xg xh
+
+
+xG_cn=similar(R)
+xh_cn=similar(R)
+
+R2=R.^2
+
+d_cn=similar(R)
+
+function Gamma_driv(r,Q)
+    Gamma_cn_dat=similar(R)
+    Gamma1_cn_dat=similar(R)
+    Gamma2_cn_dat=similar(R)
+    for i in 1:2000
+        Gamma_cn_dat[i]=color_neutral_gamma(R[i],Q)[1]
+    end
+
+    Gamma_cn_r2= interpolate(R2, Gamma_cn_dat, SteffenMonotonicInterpolation())
+
+    for i in 1:2000
+        Gamma1_cn_dat[i]=ForwardDiff.derivative(Gamma_cn_r2, R2[i])
+    end
+
+    Gamma1_cn_r2= interpolate(R2, Gamma1_cn_dat, SteffenMonotonicInterpolation())
+
+    for i in 1:2000
+        Gamma2_cn_dat[i]=ForwardDiff.derivative(Gamma1_cn_r2, R2[i])
+    end
+
+    Gamma2_cn_r2= interpolate(R2, Gamma2_cn_dat, SteffenMonotonicInterpolation())
+
+    return (Gamma1_cn_r2(r^2), Gamma2_cn_r2(r^2))
+end
+
+function WW_cn(r,Q)
+    f_dipole=dipole_color_neutral(r,Q)
+    ad=adj_dipole(f_dipole)
+    Γ=color_neutral_gamma(r,Q)[1]
+
+    Γ_dri=Gamma_driv(r,Q)
+
+    Γ₁= Γ_dri[1]
+    Γ₂= Γ_dri[2]
+
+    xG= (1-ad)*(Γ₁+r^2*Γ₂)/Γ
+    xh=-(1-ad)* r^2*Γ₂/Γ
+    return (xG,xh,f_dipole)
+end
+
+
+
+p=Progress(2000)
+
+Threads.@threads for i in 1:2000
+    tmp= WW_cn(R[i],1)
+    xG_cn[i]=tmp[1]
+    xh_cn[i]=tmp[2]
+
+    d_cn[i]=tmp[3]
+    next!(p)
+end
+
+
+plot(R*Sat_Mom(R,d_cn)[1],xG_cn,label="xG, color neutralization")
+plot!(R*Sat_Mom(R,d_full_MV)[1],xG_f,label="xG, MV full")
+plot!(ylabel = L"xG^{(1)}(r)",
+        xlabel = L"rQ_s",
+        box = :on,
+        foreground_color_legend = nothing,
+        fontfamily = "Times New Roman",
+        xtickfontsize = 8,
+        ytickfontsize = 8,
+        xguidefontsize = 15,
+        yguidefontsize = 15,
+        thickness_scaling=1,
+        legendfontsize=10,
+        legend_font_pointsize=8,
+        legendtitlefontsize=8,
+        markersize=3,yguidefontrotation=-90,left_margin=12mm,bottom_margin=5mm)
+xlims!(0,20)
+
+
+savefig("xG_exact.pdf")
+Sat_Mom(R,d_cn)[1]
+Sat_Mom(R,d_full_MV)[1]
+plot(R*Sat_Mom(R,d_cn)[1],xh_cn,label="xh, color neutralization, Q=1")
+plot!(R*Sat_Mom(R,d_full_MV)[1],xh_f,label="xh, MV full，")
+plot!(ylabel = L"xh^{(1)}(r)",
+        xlabel = L"rQ_s",
+        box = :on,
+        foreground_color_legend = nothing,
+        fontfamily = "Times New Roman",
+        xtickfontsize = 8,
+        ytickfontsize = 8,
+        xguidefontsize = 15,
+        yguidefontsize = 15,
+        thickness_scaling=1,
+        legendfontsize=10,
+        legend_font_pointsize=8,
+        legendtitlefontsize=8,
+        markersize=3,yguidefontrotation=-90,left_margin=12mm,bottom_margin=5mm)
+xlims!(0,20)
+
+
+
+xG2_cn=similar(R)
+xh2_cn=similar(R)
+
+p=Progress(2000)
+
+d2_cn=similar(R)
+
+Threads.@threads for i in 1:2000
+    tmp= WW_cn(R[i],2)
+    xG2_cn[i]=tmp[1]
+    xh2_cn[i]=tmp[2]
+
+    d2_cn[i]=tmp[3]
+    next!(p)
+end
+
+
+plot!(R*Sat_Mom(R,d2_cn)[1],xG2_cn,label="xG, color neutralization，Q=2")
+plot!(R*Sat_Mom(R,d_full_MV)[1],xG_f,label="xG, MV full")
+plot!(ylabel = L"xG^{(1)}(r)",
+        xlabel = L"rQ_s",
+        box = :on,
+        foreground_color_legend = nothing,
+        fontfamily = "Times New Roman",
+        xtickfontsize = 8,
+        ytickfontsize = 8,
+        xguidefontsize = 15,
+        yguidefontsize = 15,
+        thickness_scaling=1,
+        legendfontsize=10,
+        legend_font_pointsize=8,
+        legendtitlefontsize=8,
+        markersize=3,yguidefontrotation=-90,left_margin=12mm,bottom_margin=5mm)
+xlims!(0,20)
+
+
+savefig("xG_exact.pdf")
+
+Sat_Mom(R,d_cn)[1]
+Sat_Mom(R,d2_cn)[1]
+Sat_Mom(R,d_full_MV)[1]
+plot(R*Sat_Mom(R,d_cn)[1],xh_cn,label=L"xh, color neutralization, Q=1, Q_s=1.92")
+plot!(R*Sat_Mom(R,d2_cn)[1],xh2_cn,label=L"xh, color neutralization, Q=2, Q_s=0.962")
+plot!(R*Sat_Mom(R,d_full_MV)[1],xh_f,label="xh, MV")
+plot!(ylabel = L"xh^{(1)}(r)",
+        xlabel = L"rQ_s",
+        box = :on,
+        foreground_color_legend = nothing,
+        fontfamily = "Times New Roman",
+        xtickfontsize = 8,
+        ytickfontsize = 8,
+        xguidefontsize = 15,
+        yguidefontsize = 15,
+        thickness_scaling=1,
+        legendfontsize=10,
+        legend_font_pointsize=8,
+        legendtitlefontsize=8,
+        markersize=3,yguidefontrotation=-90,left_margin=12mm,bottom_margin=5mm)
+xlims!(0,20)
+
+
+# xG, xh in momentum space
+
+function K_space(k,r,data_r)
+    fr= interpolate(r, data_r, SteffenMonotonicInterpolation())
+
+    quadgk(x -> x*besselj(0,x*k)*fr(x)/2π,1e-6,20,rtol=1e-9)
+end
+
+K_space(1,R,xh_cn)
+
+fr= interpolate(R,xh_cn, SteffenMonotonicInterpolation())
+plot(R,xh_cn)
+plot!(R,fr.(R))

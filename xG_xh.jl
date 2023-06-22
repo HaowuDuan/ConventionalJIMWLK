@@ -33,16 +33,16 @@ const L=32
 # lattice spacing
 const a=L/N
 # infra regulator m
-const m2=(0.01)^2#1/L
+m2=(0.1)^2#1/L
 #
-const gμ=1
+gμ=1.45
 #
 const Nc=3
 const Ng=Nc^2-1
 
 
 # number of configurations
-N_config=10
+#N_config=10
 # anything will be updated with new N
 
 #For testing only, set seed to 1234
@@ -193,6 +193,8 @@ function Dr_prime(V,Δ)
      D_r= zeros(Float32,N_step)
      N_r= zeros(Float32,N_step)
 
+
+
      for i in 1: Int(N/2), j in 1:Int(N/2)
              r_index=floor(Int,sqrt(((i-1)*a)^2+((j-1)*a)^2)/Δ_size)+1
          if  r_index< N_step
@@ -206,7 +208,149 @@ function Dr_prime(V,Δ)
          D_r[r]=D_tmp/(N_r[r]+1e-6)
      end
 
-     return  (collect(1:N_step)*Δ_size,D_r)
+     R=collect(1:N_step)*Δ_size
+     pushfirst!(R,0)
+     pushfirst!(D_r,1)
+
+     return  (R,D_r)
+end
+
+
+function K(i,j)
+    [(2/a)* sin(wave_number[i]/2), (2/a)* sin(wave_number[j]/2)]/(K2[i,j]+m2)
+end
+
+function ξ_generator()
+     ξ_tmp=rand(rng,Normal(0,1),N,N,2,Ng)
+end
+
+function ξ_left(ξ_data, V_input)
+     ξ_tmp=zeros(ComplexF32,N,N,2,Nc,Nc)
+     Threads.@threads for i in 1:2
+         for n in 1:N
+              for m in 1:N
+                   V_tmp=@view V_input[m,n,:,:]
+                   V_dagger=adjoint(V_tmp)
+                   ξ_tmp[m,n,i,:,:]=sum(ξ_data[m,n,i,a]*(V_tmp*t[a]*V_dagger) for a in 1:Ng)
+              end
+
+          end
+      end
+     return  ξ_tmp
+end
+
+function ξ_right(ξ_data,V_input)
+    ξ_tmp=zeros(ComplexF32,N,N,2,Nc,Nc)
+    Threads.@threads for i in 1:2
+        for n in 1:N
+             for m in 1:N
+                  ξ_tmp[m,n,i,:,:].=sum(ξ_data[m,n,i,a]*t[a] for a in 1:Ng)
+             end
+
+         end
+     end
+    return ξ_tmp
+end
+
+function convolution(ξ_local)
+    ξ_tmp_k=similar(ξ_local)
+    ξ_tmp_k_prime=zeros(ComplexF32,N,N,Nc,Nc)
+    ξ_tmp_x=zeros(ComplexF32,N,N,Nc,Nc)
+    Threads.@threads for i in 1:2
+        for j in 1:Nc
+                for k in 1:Nc
+                   ξ_tmp_k[:,:,i,j,k]=fft_p*ξ_local[:,:,i,j,k]
+                end
+        end
+    end
+
+    Threads.@threads for n in 1:N
+        for m in 1:N
+            k_tmp=K(m,n)
+            ξ_tmp_k_prime[m,n,:,:]=sum(ξ_tmp_k[m,n,i,:,:]*k_tmp[i] for i in 1:2)
+        end
+    end
+
+    Threads.@threads for j in 1:Nc
+            for k in 1:Nc
+               ξ_tmp_x[:,:,j,k]=ifft_p*ξ_tmp_k_prime[:,:,j,k]
+            end
+    end
+
+
+    return  ξ_tmp_x
+end
+
+function exp_left(ξ_data, V_input, step)
+     ξ_local=ξ_left(ξ_data, V_input)
+     ξ_x=zeros(ComplexF32,N,N,Nc,Nc)
+     e_left=similar(ξ_x)
+
+     ξ_x=convolution(ξ_local)
+
+     Threads.@threads for m in 1:N
+         for n in 1:N
+             e_left[n,m,:,:]=exp(2sqrt(step*αₛ)*ξ_x[n,m,:,:])
+         end
+     end
+
+     return e_left
+end
+
+
+function exp_right(ξ_data, V_input, step)
+    ξ_local=ξ_right(ξ_data, V_input)
+    ξ_x=zeros(ComplexF32,N,N,Nc,Nc)
+    e_right=similar(ξ_x)
+
+    ξ_x=convolution(ξ_local)
+
+    Threads.@threads for m in 1:N
+        for n in 1:N
+            e_right[n,m,:,:]=exp(-2sqrt(step*αₛ)*ξ_x[n,m,:,:])
+        end
+    end
+    return e_right
+end
+
+function JIMWLK(Δ, N_of_steps, V_input)
+      Y_f=N_of_steps*Δ
+
+      V_f=zeros(ComplexF32,N,N,Nc,Nc)
+
+      ξ_tmp=ξ_generator()
+
+      factor_left=exp_left(ξ_tmp/a, V_input, 0.1)
+      factor_right=exp_right(ξ_tmp/a, V_input, 0.1)
+
+      for n in 1:N
+          for m in 1:N
+               V_tmp=@view V_input[m,n,:,:]
+               left_tmp=@view factor_left[m,n,:,:]
+               right_tmp=@view factor_right[m,n,:,:]
+               W_tmp= left_tmp*V_tmp*right_tmp
+               V_f[m,n,:,:].=W_tmp
+          end
+      end
+
+      Threads.@threads for i in 1:N_of_steps-1
+          ξ=ξ_generator()
+
+          factor_left=exp_left(ξ, V_f, Δ)
+          factor_right=exp_right(ξ, V_f, Δ)
+
+          for n in 1:N
+              for m in 1:N
+                  V_tmp=@view V_f[m,n,:,:]
+                  left_tmp=@view factor_left[m,n,:,:]
+                  right_tmp=@view factor_right[m,n,:,:]
+                  W_tmp= left_tmp*V_tmp*right_tmp
+                  V_f[m,n,:,:].=W_tmp
+              end
+          end
+      end
+
+     V_f
 end
 
 
@@ -310,10 +454,18 @@ function Gluon_field_k(A_field)
     return A_k
 end
 
+
 function xG_ij(A_field)
       Ak= Gluon_field_k(A_field)
       xG_k=zeros(ComplexF32, (N,N,2,2))
       xG_r=zeros(ComplexF32, (N,N,2,2))
+
+      xG1_k=zeros(ComplexF32, N,N)
+      xh1_k=zeros(ComplexF32, N,N)
+
+      xG1_r=zeros(ComplexF32, N,N)
+      xh1_r=zeros(ComplexF32, N,N)
+
       for ny in 1:N
           for nx in 1:N
 
@@ -321,6 +473,7 @@ function xG_ij(A_field)
                xG_k[nx,ny,1,2]=sum(Ak[nx,ny,1,c]*conj(Ak[nx,ny,2,c]) for c in 1:Ng)
                xG_k[nx,ny,2,2]=sum(Ak[nx,ny,2,c]*conj(Ak[nx,ny,2,c]) for c in 1:Ng)
                xG_k[nx,ny,2,1]=sum(Ak[nx,ny,2,c]*conj(Ak[nx,ny,1,c]) for c in 1:Ng)
+
           end
       end
 
@@ -329,10 +482,32 @@ function xG_ij(A_field)
                xG_r[:,:,j,i]= ifft_p*xG_k[:,:,j,i]
            end
       end
-      return real(xG_r./N^2)
+
+      for ny in 1:N
+          for nx in 1:N
+               tmp_k=@view xG_k[nx,ny,:,:]
+               tmp_r=@view xG_r[nx,ny,:,:]
+
+               eigen_values_k=eigvals(tmp_k)
+               eigen_values_r=eigvals(tmp_r)
+
+               xG1_k[nx,ny]=eigen_values_k[1]+eigen_values_k[2]
+               xh1_k[nx,ny]=abs(eigen_values_k[1]-eigen_values_k[2])
+
+               xG1_r[nx,ny]=eigen_values_r+eigen_values_r[2]
+               xh1_r[nx,ny]=abs(eigen_values_k[1]-eigen_values_k[2])
+
+          end
+      end
+
+
+
+      return (xG1_k,xh1_k,xG1_k,xh1_k,)
 end
 
 
+
+#=
 function xGh_vs(A)
     size=floor(Int,N/2)
     xG=zeros(Float32,size)
@@ -359,7 +534,7 @@ function xGh_vs(A)
 
     return  (collect(1:size)*a,xG,xh,xG2,xh2)
 end
-
+=#
 
 function xGh_hd(xg_ij,Δ)
     N_step=floor(Int,N/2)
@@ -389,33 +564,64 @@ function xGh_hd(xg_ij,Δ)
 
     end
 
+    R=collect(1:N_step)*Δ_size
+    pushfirst!(R,0)
+    pushfirst!(D_r,1)
+
     return  (collect(1:N_step)*Δ_size,xg_r,xh_r)
+end
+
+function xGh_hd_k(xg_ij_k,Δ)
+    N_step=floor(Int,N/2)
+    Δ_size=Δ*sqrt(K2[0,1])
+
+    xg_k= zeros(Float32,N_step)
+    xh_k= zeros(Float32,N_step)
+    N_k= zeros(Float32,N_step)
+
+    for i in 1: Int(N/2), j in 1:Int(N/2)
+            xg_tmp= xg_ij[i,j,1,1]+xg_ij[i,j,2,2]
+            xh_tmp= -(xg_ij[i,j,1,1]+xg_ij[i,j,2,2])+2*K(i,j)[1]^2*xg_ij[i,j,1,1]/(K2[i,j])+2*K(i,j)[2]^2*xg_ij[i,j,2,2]/(K2[i,j])+2*K(i,j)[1]*K(i,j)[2]*(xg_ij[i,j,1,2]+xg_ij[i,j,2,1])/(K2[i,j])
+
+            k_index=K2[i,j]+1
+
+        if  k_index< N_step
+            xg_k[k_index]=xg_k[k_index]+xg_tmp
+            xh_k[k_index]=xh_k[k_index]+xh_tmp
+            N_k[k_index]= N_k[k_index]+1
+        end
+    end
+
+    for k in 1:Int(N_step)
+        xG_tmp= xg_r[k]
+        xg_k[k]=xG_tmp/(N_k[k]+1e-6)
+
+        xh_tmp= xh_r[k]
+        xh_k[k]=xh_tmp/(N_k[k]+1e-6)
+
+    end
+
+    K_list=collect(1:N_step)*Δ_size
+    pushfirst!(R,0)
+    pushfirst!(xg_k,1)
+    pushfirst!(xh_k,0)
+
+
+    return  (collect(1:N_step)*Δ_size,xg_k,xh_k)
 end
 
 v_test=Wilson_line_Ny()
 A_test=Gluon_field(v_test)
 
 xg_test=xG_ij(A_test)
+xg_k_test=
 
 
-
-(r,dipole)=Dr_prime(V_test,2)
+(r,dipole)=Dr_prime(v_test,2)
 
 (r1,xG_1,xh_1,xG_y,xh_y)=xGh_vs(A_test)
 
 (r2,xG_2,xh_2)=xGh_hd(xg_test,1)
 
-plot(r1,xG_1)
-plot(rc,xG_c)
-plot!(r,xG_y)
-plot!(r2,xG_2)
 
-plot(r1,xh_1)
-plot(rc,xh_c)
-
-plot!(r1,xh_y)
-
-
-plot!(r2,xh_2)
-plot!(r1,(xh_1.+xh_y)./2)
-xlims!(0,5)
+A = [-4. -17.; ]
