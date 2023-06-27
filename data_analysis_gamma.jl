@@ -244,14 +244,329 @@ function WW_exact_full(r,m,xG,xh)
     xh=(1-ad)* r^2*Γ₂/Γ
 end
 
-data_JIMWLK=zeros(200,7,129)
+data_JIMWLK=zeros(200,129,7)
 
 for i in 1:200
     data_tmp = readdlm("HPC_data/correct_format_$(i).dat")
-    data_JIMWLK[i,:,:]=reshape(data_tmp,(7,129))
+    data_JIMWLK[i,:,:]=reshape(data_tmp,(129,7))
 end 
 
-collect(1:) * 
-plot()
-
+R = collect(1:N÷2) * 2a
+pushfirst!(R, 0)
+plot(R, data_JIMWLK[1,:,7])
+plot!(R, data_JIMWLK[1,:,6])
 #
+
+dipole=zeros(7,129,3)
+
+# for extracting the error bar
+function BOOTSTRAP(data, N_of_config)
+    bootstrap = zeros(N_of_config)
+    for i in 1:N_of_config
+        BS_sample = similar(bootstrap)
+        for j in 1:N_of_config
+            index = rand(1:N_of_config)
+            BS_sample[j] = data[index]
+        end
+        bootstrap[i] = mean(BS_sample)
+    end
+
+    bootstrap_MEAN = mean(bootstrap)
+    bootstrap_STD = std(bootstrap)
+    (bootstrap_MEAN, bootstrap_STD)
+end
+
+for y in 1:7
+   for r in 1:129
+       # assign the value for coordinate
+       dipole[y,r,1]=R[r]
+       #Bootstap results
+        BS_tmp = BOOTSTRAP(data_JIMWLK[:, r, y], 200)
+        
+       # assign the value for dipole
+        dipole[y, r, 2] = BS_tmp[1]
+       # assign the value for error bar
+        dipole[y, r, 3] = BS_tmp[2]
+
+   end 
+end
+
+plot(dipole[1, :, 1] * Sat_Mom(dipole[1, :, 1], dipole[1, :, 2])[1], dipole[1, :, 2],label="y=0")
+plot!(dipole[2, :, 1] * Sat_Mom(dipole[2, :, 1], dipole[2, :, 2])[1], dipole[2, :, 2], label="y=0.5")
+plot!(dipole[3, :, 1] * Sat_Mom(dipole[3, :, 1], dipole[3, :, 2])[1], dipole[3, :, 2], label="y=1.0")
+plot!(dipole[4, :, 1] * Sat_Mom(dipole[4, :, 1], dipole[4, :, 2])[1], dipole[4, :, 2], label="y=1.5")
+plot!(dipole[5, :, 1] * Sat_Mom(dipole[5, :, 1], dipole[5, :, 2])[1], dipole[5, :, 2], label="y=2.0")
+plot!(dipole[6, :, 1] * Sat_Mom(dipole[6, :, 1], dipole[6, :, 2])[1], dipole[6, :, 2], label="y=2.5")
+plot!(dipole[7, :, 1] * Sat_Mom(dipole[7, :, 1], dipole[7, :, 2])[1], dipole[7, :, 2], label="y=3.0")
+
+
+plot!(ylabel=L"D(r)",
+    xlabel=L"rQ_s",
+    box=:on,
+    foreground_color_legend=nothing,
+    fontfamily="Times New Roman",
+    xtickfontsize=8,
+    ytickfontsize=8,
+    xguidefontsize=15,
+    yguidefontsize=15,
+    thickness_scaling=1,
+    legendfontsize=10,
+    legend_font_pointsize=8,
+    legendtitlefontsize=8,
+    markersize=3, yguidefontrotation=-90, left_margin=12mm, bottom_margin=5mm)
+
+xlims!(0,20)
+
+savefig("JIMWLK_dipole.pdf")
+
+
+Qs=zeros(7)
+
+for i in 1:7
+    Qs[i] = Sat_Mom(dipole[i, :, 1], dipole[i, :, 2])[1]
+end 
+
+
+
+plot(dipole[1, :, 1] * Qs[1], -Log.(dipole[1, :, 2])/Qs[1]^2, label="y=0")
+plot!(dipole[2, :, 1] * Qs[1], -Log.(dipole[2, :, 2])/Qs[2]^2, label="y=0.5")
+plot!(dipole[3, :, 1] * Qs[1], -Log.(dipole[3, :, 2])/Qs[3]^2, label="y=1.0")
+plot!(dipole[4, :, 1] * Qs[1], -Log.(dipole[4, :, 2]) / Qs[4]^2, label="y=1.5")
+plot!(dipole[5, :, 1] * Qs[1], -Log.(dipole[5, :, 2]) / Qs[5]^2, label="y=2.0")
+plot!(dipole[6, :, 1] * Qs[1], -Log.(dipole[6, :, 2]) / Qs[6]^2, label="y=2.5")
+plot!(dipole[7, :, 1] * Qs[1], -Log.(dipole[7, :, 2]) / Qs[7]^2, label="y=3.0")
+
+plot!(ylabel=L"-\frac{\ln D(r)}{Q_s^2}",
+    xlabel=L"rQ^{initial}_s",
+    box=:on,
+    foreground_color_legend=nothing,
+    fontfamily="Times New Roman",
+    xtickfontsize=8,
+    ytickfontsize=8,
+    xguidefontsize=15,
+    yguidefontsize=15,
+    thickness_scaling=1,
+    legendfontsize=10,
+    legend_font_pointsize=8,
+    legendtitlefontsize=8,
+    markersize=3, yguidefontrotation=-90, left_margin=18mm, bottom_margin=5mm)
+
+
+#3000 configs
+dipole_3000 = zeros(7, 129, 3)
+data3000_JIMWLK = zeros(3000, 129, 7)
+
+
+
+for i in 1:3000
+    data_tmp = readdlm("corrected/correct_format_$(i).dat")
+    data3000_JIMWLK[i, :, :] = reshape(data_tmp, (129, 7))
+end
+
+
+for y in 1:7
+    for r in 1:129
+        # assign the value for coordinate
+        dipole_3000[y, r, 1] = R[r]
+        #Bootstap results
+        BS_tmp = mean(data3000_JIMWLK[:, r, y])#BOOTSTRAP(data3000_JIMWLK[:, r, y], 1000)
+
+        # assign the value for dipole
+        dipole_3000[y, r, 2] = BS_tmp[1]
+        # assign the value for error bar
+        # dipole_3000[y, r, 3] = BS_tmp[2]
+
+    end
+end
+
+
+Qs1 = zeros(7)
+
+for i in 1:7
+    Qs1[i] = Sat_Mom(dipole_3000[i, :, 1], dipole_3000[i, :, 2])[1]
+end
+print(Qs1)
+
+plot(dipole_3000[1, :, 1] * Qs1[1], -Log.(dipole_3000[1, :, 2]) / Qs1[1]^2, label="y=0")
+
+plot(dipole_3000[2, :, 1] * Qs1[1], -Log.(dipole_3000[2, :, 2]) / Qs1[2]^2, label="y=0.5")
+plot(dipole_3000[3, :, 1] * Qs1[1], -Log.(dipole_3000[3, :, 2]) / Qs1[3]^2, label="y=1.0")
+plot(dipole_3000[4, :, 1] * Qs1[1], -Log.(dipole_3000[4, :, 2]) / Qs1[4]^2, label="y=1.5")
+plot(dipole_3000[5, :, 1] * Qs1[1], -Log.(dipole_3000[5, :, 2]) / Qs1[5]^2, label="y=2.0")
+plot(dipole_3000[6, :, 1] * Qs1[1], -Log.(dipole_3000[6, :, 2]) / Qs1[6]^2, label="y=2.5")
+plot(dipole_3000[7, :, 1] * Qs1[1], -Log.(dipole_3000[7, :, 2]) / Qs1[7]^2, label="y=3.0")
+
+plot!(ylabel=L"-\frac{\ln D(r)}{Q_s^2}",
+    xlabel=L"rQ^{initial}_s",
+    box=:on,
+    foreground_color_legend=nothing,
+    fontfamily="Times New Roman",
+    xtickfontsize=8,
+    ytickfontsize=8,
+    xguidefontsize=15,
+    yguidefontsize=15,
+    thickness_scaling=1,
+    legendfontsize=10,
+    legend_font_pointsize=8,
+    legendtitlefontsize=8,
+    markersize=3, yguidefontrotation=-90, left_margin=18mm, bottom_margin=5mm)
+
+
+plot(dipole_3000[1, :, 1] * Qs1[1], dipole_3000[1, :, 2], label="y=0")
+plot!(dipole_3000[2, :, 1] * Qs1[2], dipole_3000[2, :, 2], label="y=0.5")
+plot!(dipole_3000[3, :, 1] * Qs1[3], dipole_3000[3, :, 2], label="y=1.0")
+plot!(dipole_3000[4, :, 1] * Qs1[4], dipole_3000[4, :, 2], label="y=1.5")
+plot!(dipole_3000[5, :, 1] * Qs1[5], dipole_3000[5, :, 2], label="y=2.0")
+plot!(dipole_3000[6, :, 1] * Qs1[6], dipole_3000[6, :, 2], label="y=2.5")
+plot!(dipole_3000[7, :, 1] * Qs1[7], dipole_3000[7, :, 2], label="y=3.0")
+
+plot!(ylabel=L"D(r)",
+    xlabel=L"rQ_s",
+    box=:on,
+    foreground_color_legend=nothing,
+    fontfamily="Times New Roman",
+    xtickfontsize=8,
+    ytickfontsize=8,
+    xguidefontsize=15,
+    yguidefontsize=15,
+    thickness_scaling=1,
+    legendfontsize=10,
+    legend_font_pointsize=8,
+    legendtitlefontsize=8,
+    markersize=3, yguidefontrotation=-90, left_margin=18mm, bottom_margin=5mm)
+
+xlims!(0,10)
+
+Gamma_data = similar(dipole_3000[3, :, :])
+
+writedlm("dipole.dat", dipole_3000[5,:,:])
+
+for i in 1:129
+    Gamma_data[i, 1]=dipole_3000[3,i,1]
+    Gamma_data[i, 2] = -Log.(dipole_3000[3, i, 2]) / Qs1[3]^2
+end 
+
+writedlm("Gamma_data_y1.dat", Gamma_data)
+
+
+#6000 configs
+dipole_6000 = zeros(7, 129, 3)
+
+data6000_JIMWLK = zeros(6000, 129, 7)
+
+for i in 1:6000
+    data_tmp = readdlm("HPC_6000/correct_format_$(i).dat")
+    data6000_JIMWLK[i, :, :] = reshape(data_tmp, (129, 7))
+end
+
+
+for y in 1:7
+    for r in 1:129
+        # assign the value for coordinate
+        dipole_6000[y, r, 1] = R[r]
+        #Bootstap results
+        BS_tmp = BOOTSTRAP(data6000_JIMWLK[:, r, y], 6000)
+
+        # assign the value for dipole
+        dipole_6000[y, r, 2] = BS_tmp[1]
+        # assign the value for error bar
+         dipole_6000[y, r, 3] = BS_tmp[2]
+
+    end
+end
+
+
+
+
+Qs2 = zeros(7)
+
+Threads.@thread for i in 1:7
+    Qs2[i] = Sat_Mom(dipole_6000[i, :, 1], dipole_6000[i, :, 2])[1]
+end
+print(Qs2)
+
+plot(dipole_3000[1, :, 1] * Qs1[1], -Log.(dipole_3000[1, :, 2]) / Qs1[1]^2, label="y=0")
+
+plot(dipole_3000[2, :, 1] * Qs1[1], -Log.(dipole_3000[2, :, 2]) / Qs1[2]^2, label="y=0.5")
+plot(dipole_3000[3, :, 1] * Qs1[1], -Log.(dipole_3000[3, :, 2]) / Qs1[3]^2, label="y=1.0")
+plot(dipole_3000[4, :, 1] * Qs1[1], -Log.(dipole_3000[4, :, 2]) / Qs1[4]^2, label="y=1.5")
+plot(dipole_3000[5, :, 1] * Qs1[1], -Log.(dipole_3000[5, :, 2]) / Qs1[5]^2, label="y=2.0")
+plot(dipole_3000[6, :, 1] * Qs1[1], -Log.(dipole_3000[6, :, 2]) / Qs1[6]^2, label="y=2.5")
+plot(dipole_3000[7, :, 1] * Qs1[1], -Log.(dipole_3000[7, :, 2]) / Qs1[7]^2, label="y=3.0")
+
+plot!(ylabel=L"-\frac{\ln D(r)}{Q_s^2}",
+    xlabel=L"rQ^{initial}_s",
+    box=:on,
+    foreground_color_legend=nothing,
+    fontfamily="Times New Roman",
+    xtickfontsize=8,
+    ytickfontsize=8,
+    xguidefontsize=15,
+    yguidefontsize=15,
+    thickness_scaling=1,
+    legendfontsize=10,
+    legend_font_pointsize=8,
+    legendtitlefontsize=8,
+    markersize=3, yguidefontrotation=-90, left_margin=18mm, bottom_margin=5mm)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

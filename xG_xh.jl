@@ -33,14 +33,14 @@ const L=32
 # lattice spacing
 const a=L/N
 # infra regulator m
-m2=(0.1)^2#1/L
+const m2=(0.1)^2#1/L
 #
 gμ=1.45
 #
 const Nc=3
 const Ng=Nc^2-1
 
-
+const αₛ=1
 # number of configurations
 #N_config=10
 # anything will be updated with new N
@@ -390,7 +390,7 @@ function La_mod(n,N)
               return 1
           end
 end
-
+#=
 function Gluon_field_center(V)
     A=zeros(ComplexF32, (N,N,2,Ng))
     Ax_tmp=zeros(ComplexF32, (Nc,Nc))
@@ -417,7 +417,7 @@ function Gluon_field_center(V)
     end
     A
 end
-
+=#
 function Gluon_field(V)
     A=zeros(ComplexF32, (N,N,2,Ng))
     Ax_tmp=zeros(ComplexF32, (Nc,Nc))
@@ -454,19 +454,93 @@ function Gluon_field_k(A_field)
     return A_k
 end
 
+function xG_ij_k_projection(A_field)
+     Ak= Gluon_field_k(A_field)
+     xG_k=zeros(ComplexF32, (N,N,2,2))
+     xgh_k=zeros(Float32,2,N,N)
+     Threads.@threads for ny in 1:N
+         for nx in 1:N
+
+              xG_k[nx,ny,1,1]=sum(Ak[nx,ny,1,c]*conj(Ak[nx,ny,1,c]) for c in 1:Ng)/N^4
+              xG_k[nx,ny,1,2]=sum(Ak[nx,ny,1,c]*conj(Ak[nx,ny,2,c]) for c in 1:Ng)/N^4
+              xG_k[nx,ny,2,2]=sum(Ak[nx,ny,2,c]*conj(Ak[nx,ny,2,c]) for c in 1:Ng)/N^4
+              xG_k[nx,ny,2,1]=sum(Ak[nx,ny,2,c]*conj(Ak[nx,ny,1,c]) for c in 1:Ng)/N^4
+
+         end
+     end
+
+     Threads.@threads for ny in 1:N
+         for nx in 1:N
+              tmp_k=@view xG_k[nx,ny,:,:]
+
+              xgh_k[1,nx,ny]=tmp_k[1,1]+tmp_k[2,2]
+              if nx==1
+                  if ny==1
+
+                     xgh_k[2,nx,ny]=-(tmp_k[1,1]+tmp_k[2,2])+2*()/K2[]
+
+         end
+     end
+
+     return xgh_ks
+end
+
+function xG_ij_k(A_field)
+     Ak= Gluon_field_k(A_field)
+     xG_k=zeros(ComplexF32, (N,N,2,2))
+     xgh_k=zeros(Float32,2,N,N)
+     Threads.@threads for ny in 1:N
+         for nx in 1:N
+
+              xG_k[nx,ny,1,1]=sum(Ak[nx,ny,1,c]*conj(Ak[nx,ny,1,c]) for c in 1:Ng)/N^4
+              xG_k[nx,ny,1,2]=sum(Ak[nx,ny,1,c]*conj(Ak[nx,ny,2,c]) for c in 1:Ng)/N^4
+              xG_k[nx,ny,2,2]=sum(Ak[nx,ny,2,c]*conj(Ak[nx,ny,2,c]) for c in 1:Ng)/N^4
+              xG_k[nx,ny,2,1]=sum(Ak[nx,ny,2,c]*conj(Ak[nx,ny,1,c]) for c in 1:Ng)/N^4
+
+         end
+     end
+
+     Threads.@threads for ny in 1:N
+         for nx in 1:N
+              tmp_k=@view xG_k[nx,ny,:,:]
+
+              eigen_values_k=eigvals(real(tmp_k))
+
+              xgh_k[1,nx,ny]=(eigen_values_k[1]+eigen_values_k[2])/2
+              xgh_k[2,nx,ny]=(abs(eigen_values_k[1]-eigen_values_k[2]))/2
+
+         end
+     end
+
+     return xgh_k
+end
+
+
+function xG_ij_r(xgh_k)
+    xgh_r=similar(xgh_k)
+
+    for i in 1:2
+
+            xgh_r[i,:,:]= real(ifft_p*xgh_k[i,:,:]) .* N^2
+
+    end
+
+    return xgh_r
+end
 
 function xG_ij(A_field)
+
       Ak= Gluon_field_k(A_field)
       xG_k=zeros(ComplexF32, (N,N,2,2))
       xG_r=zeros(ComplexF32, (N,N,2,2))
 
-      xG1_k=zeros(ComplexF32, N,N)
-      xh1_k=zeros(ComplexF32, N,N)
+      xG1_k=zeros(Float32, N,N)
+      xh1_k=zeros(Float32, N,N)
 
-      xG1_r=zeros(ComplexF32, N,N)
-      xh1_r=zeros(ComplexF32, N,N)
+      xG1_r=zeros(Float32, N,N)
+      xh1_r=zeros(Float32, N,N)
 
-      for ny in 1:N
+      Threads.@threads for ny in 1:N
           for nx in 1:N
 
                xG_k[nx,ny,1,1]=sum(Ak[nx,ny,1,c]*conj(Ak[nx,ny,1,c]) for c in 1:Ng)
@@ -479,33 +553,90 @@ function xG_ij(A_field)
 
       for i in 1:2
            for j in 1:2
-               xG_r[:,:,j,i]= ifft_p*xG_k[:,:,j,i]
+               xG_r[:,:,j,i]= ifft_p*xG_k[:,:,j,i]*
            end
       end
 
-      for ny in 1:N
+      Threads.@threads for ny in 1:N
           for nx in 1:N
                tmp_k=@view xG_k[nx,ny,:,:]
                tmp_r=@view xG_r[nx,ny,:,:]
 
-               eigen_values_k=eigvals(tmp_k)
-               eigen_values_r=eigvals(tmp_r)
+               eigen_values_k=eigvals(real(tmp_k/N^4))
+               eigen_values_r=eigvals(real(tmp_r/N^2))
 
-               xG1_k[nx,ny]=eigen_values_k[1]+eigen_values_k[2]
-               xh1_k[nx,ny]=abs(eigen_values_k[1]-eigen_values_k[2])
+               xG1_k[nx,ny]=(eigen_values_k[1]+eigen_values_k[2])/2
+               xh1_k[nx,ny]=(abs(eigen_values_k[1]-eigen_values_k[2]))/2
 
-               xG1_r[nx,ny]=eigen_values_r+eigen_values_r[2]
-               xh1_r[nx,ny]=abs(eigen_values_k[1]-eigen_values_k[2])
+               xG1_r[nx,ny]=(eigen_values_r[1]+eigen_values_r[2])/2
+               xh1_r[nx,ny]=(abs(eigen_values_k[1]-eigen_values_k[2]))/2
 
           end
       end
 
-
-
-      return (xG1_k,xh1_k,xG1_k,xh1_k,)
+      return (xG1_k,xh1_k,xG1_r,xh1_r)
 end
 
 
+function anguler_average_k(data,Δ)
+    N_step=floor(Int,N/2)
+    Δ_size=Δ*sqrt(K2[2,1])
+
+    data_k=zeros(Float32,N_step)
+    N_k= zeros(Float32,N_step)
+
+
+    for i in 1: Int(N/2), j in 1:Int(N/2)
+            data_k_tmp= data[i,j]
+            if i+j!=2
+                k_index=floor(Int,sqrt(K2[i,j])/Δ_size)+1
+                if  k_index< N_step
+                 data_k[k_index]=data_k[k_index]+data_k_tmp
+                 N_k[k_index]= N_k[k_index]+1
+                end
+            end
+    end
+
+    for i in 1:Int(N_step)
+        data_tmp= data_k[i]
+        data_k[i]=data_tmp/(N_k[i]+1e-6)
+    end
+
+    M_list=collect(1:N_step)*Δ_size
+    pushfirst!(M_list,0)
+    pushfirst!(data_k,data[1,1])
+    (M_list,data_k)
+end
+
+function anguler_average_r(data,Δ)
+    N_step=floor(Int,N/2)
+    Δ_size=Δ*a
+
+    data_r=zeros(Float32,N_step)
+    N_r= zeros(Float32,N_step)
+
+    for i in 1: Int(N/2), j in 1:Int(N/2)
+            if i+j!=2
+               data_r_tmp= data[i,j]
+               r_index=floor(Int,sqrt(((i-1)*a)^2+((j-1)*a)^2)/Δ_size)+1
+               if  r_index< N_step
+                   data_r[r_index]=data_r[r_index]+data_r_tmp
+                   N_r[r_index]= N_r[r_index]+1
+               end
+           end
+    end
+
+    for r in 1:Int(N_step)
+        data_tmp= data_r[r]
+        data_r[r]=data_tmp/(N_r[r]+1e-6)
+
+    end
+
+    R=collect(1:N_step)*Δ_size
+    pushfirst!(R,0)
+    pushfirst!(data_r,data[1,1])
+    (R,data_r)
+end
 
 #=
 function xGh_vs(A)
@@ -534,7 +665,7 @@ function xGh_vs(A)
 
     return  (collect(1:size)*a,xG,xh,xG2,xh2)
 end
-=#
+
 
 function xGh_hd(xg_ij,Δ)
     N_step=floor(Int,N/2)
@@ -570,6 +701,8 @@ function xGh_hd(xg_ij,Δ)
 
     return  (collect(1:N_step)*Δ_size,xg_r,xh_r)
 end
+
+
 
 function xGh_hd_k(xg_ij_k,Δ)
     N_step=floor(Int,N/2)
@@ -609,19 +742,31 @@ function xGh_hd_k(xg_ij_k,Δ)
 
     return  (collect(1:N_step)*Δ_size,xg_k,xh_k)
 end
+=#
+
 
 v_test=Wilson_line_Ny()
 A_test=Gluon_field(v_test)
-
-xg_test=xG_ij(A_test)
-xg_k_test=
-
-
-(r,dipole)=Dr_prime(v_test,2)
-
-(r1,xG_1,xh_1,xG_y,xh_y)=xGh_vs(A_test)
-
-(r2,xG_2,xh_2)=xGh_hd(xg_test,1)
+dat_gh_k=xG_ij_k(A_test)
+dat_gh_r=xG_ij_r(dat_gh_k)
 
 
-A = [-4. -17.; ]
+(r,dipole)=Dr_prime(V_final,2)
+(r1,xg1_r)=anguler_average_r(dat_gh_r[1,:,:],1)
+(r2,xh1_r)=anguler_average_r(dat_gh_r[2,:,:],1)
+(k1,xg1_k)=anguler_average_k(dat_gh_k[1,:,:],1)
+(k2,xh1_k)=anguler_average_k(dat_gh_k[2,:,:],1)
+
+
+plot(r,dipole)
+
+plot(r1,xg1_r)
+plot!(r1,xh1_r)
+xlims!(0,1)
+plot(k1,xg1_k)
+plot!(k1,xh1_k)
+
+V_final=JIMWLK(0.01, 50, v_test)
+
+
+print(k1)
