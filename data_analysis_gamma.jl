@@ -20,6 +20,8 @@ using StatsPlots
 using Measures
 using SpecialFunctions
 using ArbNumerics
+using Interpolations
+using ForwardDiff
 # This file is a test of calculation of the dipole correlator in MV model.
 # All calculation will be done at fixed parameters.
 #Once the code is working, it will be modifined and put into a bigger CGC package where the functions can be called.
@@ -478,23 +480,25 @@ end
 
 
 
-Qs2 = zeros(7)
+Qs1 = zeros(7)
 
-Threads.@thread for i in 1:7
-    Qs2[i] = Sat_Mom(dipole_6000[i, :, 1], dipole_6000[i, :, 2])[1]
+Threads.@threads for i in 1:7
+    Qs1[i] = Sat_Mom(dipole_6000[i, :, 1], dipole_6000[i, :, 2])[1]
 end
-print(Qs2)
+print(Qs1)
 
-plot(dipole_3000[1, :, 1] * Qs1[1], -Log.(dipole_3000[1, :, 2]) / Qs1[1]^2, label="y=0")
+plot(dipole_6000[1, :, 1], dipole_6000[1, :, 2])
+plot!(dipole_6000[2, :, 1], dipole_6000[2, :, 2])
 
-plot(dipole_3000[2, :, 1] * Qs1[1], -Log.(dipole_3000[2, :, 2]) / Qs1[2]^2, label="y=0.5")
-plot(dipole_3000[3, :, 1] * Qs1[1], -Log.(dipole_3000[3, :, 2]) / Qs1[3]^2, label="y=1.0")
-plot(dipole_3000[4, :, 1] * Qs1[1], -Log.(dipole_3000[4, :, 2]) / Qs1[4]^2, label="y=1.5")
-plot(dipole_3000[5, :, 1] * Qs1[1], -Log.(dipole_3000[5, :, 2]) / Qs1[5]^2, label="y=2.0")
-plot(dipole_3000[6, :, 1] * Qs1[1], -Log.(dipole_3000[6, :, 2]) / Qs1[6]^2, label="y=2.5")
-plot(dipole_3000[7, :, 1] * Qs1[1], -Log.(dipole_3000[7, :, 2]) / Qs1[7]^2, label="y=3.0")
+plot(dipole_6000[1, :, 1], -Log.(dipole_6000[1, :, 2]) / Qs1[1]^2, label=L"y=0, Q_s=0.94")
+plot!(dipole_6000[2, :, 1], -Log.(dipole_6000[2, :, 2]) / Qs2[2]^2, label=L"y=0.2, Q_s=0.94")
+plot!(dipole_6000[3, :, 1], -Log.(dipole_6000[3, :, 2]) / Qs2[3]^2, label=L"y=0.4,Q_s=1.13 ")
+plot!(dipole_6000[4, :, 1], -Log.(dipole_6000[4, :, 2]) / Qs2[4]^2, label=L"y=0.6, Q_s=1.41")
+plot!(dipole_6000[5, :, 1], -Log.(dipole_6000[5, :, 2]) / Qs2[5]^2, label=L"y=0.8, Q_s=1.89")
+#plot(dipole_6000[6, :, 1] * Qs2[1], -Log.(dipole_6000[6, :, 2]) / Qs2[6]^2, label="y=2.5")
+#plot(dipole_6000[7, :, 1] * Qs2[1], -Log.(dipole_6000[7, :, 2]) / Qs2[7]^2, label="y=3.0")
 
-plot!(ylabel=L"-\frac{\ln D(r)}{Q_s^2}",
+plot!(ylabel=L"-\frac{\ln d(r)}{Q_s^2}",
     xlabel=L"rQ^{initial}_s",
     box=:on,
     foreground_color_legend=nothing,
@@ -505,23 +509,47 @@ plot!(ylabel=L"-\frac{\ln D(r)}{Q_s^2}",
     yguidefontsize=15,
     thickness_scaling=1,
     legendfontsize=10,
+    lengend=:topleft,
     legend_font_pointsize=8,
     legendtitlefontsize=8,
     markersize=3, yguidefontrotation=-90, left_margin=18mm, bottom_margin=5mm)
 
 
+savefig("Gamma_JIMWLK.pdf")   
+xlims!(0,12)
+
+R2 = R .^ 2
 
 
+#=
+function Gamma_driv(Gamma_dat, R)
+    Gamma_r2 = interpolate(R2, Gamma_dat, SteffenMonotonicInterpolation())
+    
+    r=LinRange(0,14,2000)
+    r2=r.^2
+
+    Gamma1_dat = similar(r)
+    Gamma2_dat = similar(r)
 
 
+    for i in 1:length(r)
+        Gamma1_dat[i] = ForwardDiff.derivative(Gamma_r2, r2[i])
+    end
 
+    Gamma1_r2 = interpolate(r2, Gamma1_dat, SteffenMonotonicInterpolation())
 
+    for i in 1:length(r)
+        Gamma2_dat[i] = ForwardDiff.derivative(Gamma1_r2, r2[i])
+    end
 
+    Gamma2_r2 = interpolate(r2, Gamma2_dat, SteffenMonotonicInterpolation())
+   
+    Gamma1_dat = Gamma1_r2.(R2[1:57])
+    Gamma2_dat = Gamma2_r2.(R2[1:57])
 
-
-
-
-
+    return [Gamma1_dat,Gamma2_dat]
+end
+=#
 
 
 
