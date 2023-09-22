@@ -579,7 +579,7 @@ Pr=Progress(11)
 p0=[10, 0.002, 0.5, 0.7]
 p1=[3.0, 0.01, 0.5, 0.7]
 for i in 1:11
-    fit_tmp = curve_fit((r, p) -> M_xg(r, p), v_xg[1, 5:100, 1], obs[i, 5:100], 1.0 ./ (err[i, 5:100] .* 1.0), p0, lower=[0.01, 0.0001, 0.001, 0.6], upper=[100.0, 0.2, 5.0, 1.1])#; autodiff=:finiteforward, maxIter=200)
+    fit_tmp = curve_fit((r, p) -> M_xg(r, p), v_xg[1, 5:100, 1], obs[i, 5:100], 1.0 ./ (errv[i, 5:100] .* 1), p0, lower=[0.01, 0.0001, 0.001, 0.6], upper=[100.0, 0.2, 5.0, 1.1])#; autodiff=:finiteforward, maxIter=200)
     # curve_fit((r, p) -> M_xg(r, p), v_xg[1, 5:100, 1], obs[i, 5:100], 1.0 ./ (err[i, 5:100] .* 1.5), p1, lower=[3.0, 0.0, 0.1, 0.5], upper=[6.0, 0.2, 2.0, 1.5]  ; autodiff=:finiteforward, maxIter=200)
     Para[:,i, 1] .=fit_tmp.param 
     p0 .=fit_tmp.param
@@ -668,9 +668,9 @@ end
 Para1_y = zeros(4,11)
 Para2_y =zeros(4,11)
 p1 = [3.514, 0.0, 0.47, 1.13]
-Pr=Progress(11)
+Pr=Progress(9)
 p0 = [40, 0.14, 0.17, 0.998]
-for i in 10:11
+for i in 1:9
     fit_tmp =@time curve_fit(M_xg, v_xg[1, 5:100, 1], obs[i, 5:100], 1.0 ./ (errv[i, 5:100] .* 1.0), p0,lower=[0.01, 0.0001, 0.001, 0.6], upper=[100.0, 0.2, 5.0, 1.1]) #lower=[3.0, 0.0, 0.1, 0.5], upper=[6.0, 0.2, 2.0, 1.5])# ; autodiff=:finiteforward, maxIter=200)
     Para2_y[:, i] .= fit_tmp.param
     p0 .= fit_tmp.param
@@ -702,7 +702,7 @@ end
 Para3_y = zeros(4, 11)
 Para4_y = zeros(4, 11)
 Pr = Progress(9)
-p0 = [40, 0.14, 0.17, 0.998]
+p0 = [10, 0.002, 0.5, 0.7]#[40, 0.14, 0.17, 0.998]
 
 for i in 1:9
     fit_tmp = @time curve_fit(M_xg, v_xg[1, 5:100, 1], obs_im[i, 5:100], 1.0 ./ (errv[i, 5:100] .* 1.0), p0, lower=[0.01, 0.0001, 0.001, 0.6], upper=[100.0, 0.2, 5.0, 1.1] ; autodiff=:finiteforward, maxIter=200)
@@ -714,7 +714,7 @@ end
 
 scatter(Y[1:9], Para2_y[3, 1:9] ./ (Qs[1:9]), ylims=(0, 1),label="data from adjoint dipole")
 scatter!(Y[1:9], Para3_y[3, 1:9] ./ (Qs[1:9]), ylims=(0, 1),label="data from fundamental dipole")
-scatter!(Y[1:9], Para4_y[3, 1:9] ./ (Qs[1:9]), label="200 iteration")
+scatter(Y[1:9], Para4_y[3, 1:9] ./ (Qs[1:9]), label="200 iteration")
 scatter!(xlabel="Y", ylabel=L"Q/Q_s")
 plot!(yguidefontrotation=-90, leftmargin=15mm)
 
@@ -758,7 +758,7 @@ function M_xh(r, pa)
     end
 
     function d2Γ_int(p, r)
-        return p^3 * (besselj(0, p * r)) / (p^2 + m^2)^2 * p^2 * (Q^2 / p^2)^γ / (1.0 + (Q^2 / p^2)^γ)
+        return -p^3 * (besselj(2, p * r)) / (p^2 + m^2)^2 * p^2 * (Q^2 / p^2)^γ / (1.0 + (Q^2 / p^2)^γ)
     end
 
     Γ = zeros(length(r))
@@ -771,3 +771,97 @@ function M_xh(r, pa)
     end
     return A * r .* d2Γ #./ Γ 
 end
+
+plot!(xdata, ydata, ribbon=weights, label="Data " * L"Y=" * "$Y", xlim=(0.2, 6), ylim=(0, 3.5))
+plot!(xa, ya, label="", color=:black)
+
+begin
+    y=0
+    i=y+1
+    plot(v_xg[1, 5:100, 1], obs[i, 5:100], ribbon=errv[i, 5:100], label="Y=$(y)", xlim=(0.2, 6), ylim=(0, 3.5))
+    
+    modeldata_xg = similar(v_xg[1, 5:100, 1])
+    modeldata_xg .= M_xg(v_xg[1, 5:100, 1], Para4_y[:, i])
+    
+    plot!(v_xg[1, 5:100, 1], modeldata_xg, label="model, y=$(y)", color=:black)
+end
+
+begin
+    y = 2
+    i = y + 1
+    plot!(v_xg[1, 5:100, 1], obs[i, 5:100], ribbon=errv[i, 5:100], label="Y=$(y)", xlim=(0.2, 6), ylim=(0, 3.5))
+
+    modeldata_xg = similar(v_xg[1, 5:100, 1])
+    modeldata_xg .= M_xg(v_xg[1, 5:100, 1], Para4_y[:, i])
+
+    plot!(v_xg[1, 5:100, 1], modeldata_xg, label="model, y=$(y)", color=:black)
+end
+
+
+begin
+    y = 4
+    i = y + 1
+    plot!(v_xg[1, 5:100, 1], obs[i, 5:100], ribbon=errv[i, 5:100], label="Y=$(y)", xlim=(0.2, 6), ylim=(0, 3.5))
+
+    modeldata_xg = similar(v_xg[1, 5:100, 1])
+    modeldata_xg .= M_xg(v_xg[1, 5:100, 1], Para4_y[:, i])
+
+    plot!(v_xg[1, 5:100, 1], modeldata_xg, label="model, y=$(y)", color=:black)
+end
+
+
+begin
+    y = 6
+    i = y + 1
+    plot!(v_xg[1, 5:100, 1], obs[i, 5:100], ribbon=errv[i, 5:100], label="Y=$(y)", xlim=(0.2, 6), ylim=(0, 3.5))
+
+    modeldata_xg = similar(v_xg[1, 5:100, 1])
+    modeldata_xg .= M_xg(v_xg[1, 5:100, 1], Para4_y[:, i])
+
+    plot!(v_xg[1, 5:100, 1], modeldata_xg, label="model, y=$(y)", color=:black)
+end
+
+begin
+    y = 8
+    i = y + 1
+    plot!(v_xg[1, 5:100, 1], obs[i, 5:100], ribbon=errv[i, 5:100], label="Y=$(y)", xlim=(0.2, 6), ylim=(0, 3.5))
+
+    modeldata_xg = similar(v_xg[1, 5:100, 1])
+    modeldata_xg .= M_xg(v_xg[1, 5:100, 1], Para4_y[:, i])
+
+    plot!(v_xg[1, 5:100, 1], modeldata_xg, label="model, y=$(y)", color=:black)
+end
+
+
+plot!(xlabel="r", ylabel=L"\frac{rxG \ln D(r)}{1-D(r)}")
+plot!(yguidefontrotation=-90, leftmargin=22mm)
+
+savefig("Archive/fit/xG_combo.pdf")
+
+begin
+    y = 6
+    i = y + 1
+    #plot(v_xg[1, 5:100, 1], obs[i, 5:100], ribbon=errv[i, 5:100], label="Y=$(y)", xlim=(0.2, 6), ylim=(0, 3.5))
+
+    modeldata_xh = similar(v_xg[1, 5:100, 1])
+    modeldata_xh .= M_xh(v_xg[1, 5:100, 1], Para4_y[:, i])
+
+    plot!(v_xg[1, 5:100, 1], -modeldata_xh, label="model, y=0.$(y)", color=:black)
+end
+
+vs_xh = zeros(255, 5, 10)
+
+for y in 1:9
+    i=y-1
+    vs_xh[:, :, y] = readdlm("Archive/xh_0.$i.dat")
+end
+
+plot(vs_xh[:, 1, 1], -vs_xh[:, 1, 1] .* vs_xh[:, 2, 1] ./ (1 .- vs_xh[:, 3, 1]) .* Log.(vs_xh[:, 3, 1]), label="y=0")
+
+plot!(vs_xh[:, 1, 3], -vs_xh[:, 1, 3] .* vs_xh[:, 2, 3] ./ (1 .- vs_xh[:, 3, 3]) .* Log.(vs_xh[:, 3, 3]), label="y=0.2")
+
+plot!(vs_xh[:, 1, 5], -vs_xh[:, 1, 5] .* vs_xh[:, 2, 5] ./ (1 .- vs_xh[:, 3, 5]) .* Log.(vs_xh[:, 3, 5]), label="y=0.4")
+
+plot!(vs_xh[:, 1, 7], -vs_xh[:, 1, 7] .* vs_xh[:, 2, 7] ./ (1 .- vs_xh[:, 3, 7]) .* Log.(vs_xh[:, 3, 7]), label="y=0.6")
+
+plot!(xlims=(0,6))

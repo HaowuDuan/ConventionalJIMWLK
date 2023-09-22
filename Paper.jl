@@ -23,6 +23,7 @@ using Measures
 using SpecialFunctions
 using ArbNumerics
 using QuadGK
+
 #using DifferentialEquation
 using ForwardDiff
 using Interpolations
@@ -98,12 +99,18 @@ function color_neutral_gamma(r, Q)
     quadgk(x -> 2 * (r^2) * x^3 * (1 - besselj(0, x)) / (x^2 + Q^2 * r^2) / (x^2)^2, 0, 313.374, rtol=1e-9)
 end
 
+function dipole_color_neutral(Qs, Γ)
+    return exp(-Qs^2 * Γ)
+end
+
+#=
 function dipole_color_neutral(r, Q, Qs)
     return exp(-Qs^2 * color_neutral_gamma(r, Q)[1])
 end
+=#
+
 
 R=LinRange(0,16,257)
-
 
 function Gamma_driv(R, Gamma_cn_dat)
     
@@ -128,12 +135,13 @@ function Gamma_driv(R, Gamma_cn_dat)
     return (Gamma1_cn_dat, Gamma2_cn_dat)
 end
 
-function WW_cn(r, Q, Qs)
-    f_dipole = dipole_color_neutral(r, Q, Qs)
-    ad = adj_dipole(f_dipole)
-    Γ = color_neutral_gamma(r, Q)[1]
+function WW_cn(f_d, Gamma)
+    f_dipole = f_d
+    ad=similar(f_dipole)
+    ad = adj_dipole.(f_dipole)
+    Γ_dat = Gamma
 
-    Γ_dri = Gamma_driv(r, Q)
+    Γ_dri = Gamma_driv(R, Γ_dat)
 
     Γ₁ = Γ_dri[1]
     Γ₂ = Γ_dri[2]
@@ -141,4 +149,11 @@ function WW_cn(r, Q, Qs)
     xG = (1 - ad) * (Γ₁ + r^2 * Γ₂) / Γ
     xh = -(1 - ad) * r^2 * Γ₂ / Γ
     return (xG, xh, f_dipole)
+end
+
+
+begin
+   # Define parameters 
+    
+
 end

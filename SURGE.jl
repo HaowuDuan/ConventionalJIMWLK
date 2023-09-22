@@ -437,15 +437,15 @@ function WW_cn(r,Q,Qs)
 end
 
 
-R=LinRange(0,20,2000)
+R=LinRange(0,16,257)
 
 d_MV=similar(R)
 d_full_MV=similar(R)
 d_cn=similar(R)
 
-for i in 1:2000
-    d_MV[i]=D_MV(R[i],0.2,0.48)
-    d_full_MV[i]=D_full_MV(R[i],0.2,0.4)
+for i in 1:257
+   # d_MV[i]=D_MV(R[i],0.2,0.48)
+   # d_full_MV[i]=D_full_MV(R[i],0.2,0.4)
     d_cn[i]=dipole_color_neutral(R[i],0.5,0.454)
 end
 
@@ -456,7 +456,7 @@ Sat_Mom(R,d_cn)[1]
 
 plot(R*Sat_Mom(R,d_MV)[1],d_MV,label="MV small m asymptotic, m=0.2, Q_s=0.71")
 plot!(R*Sat_Mom(R,d_full_MV)[1],d_full_MV,label="MV Full, m=0.2,Q_s=0.71")
-plot!(R*Sat_Mom(R,d_cn)[1],d_cn,label="Color neutralization scale Q=0.5, Q_s=0.71")
+plot(R*Sat_Mom(R,d_cn)[1],d_cn,label="Color neutralization scale Q=0.5, Q_s=0.71")
 plot!(ylabel = L"d(r)",
             xlabel = L"rQ_s",
             box = :on,
